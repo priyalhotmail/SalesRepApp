@@ -1,0 +1,1644 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+  DELETED
+}
+
+enum OfficeType {
+  MAIN
+  BRANCH
+}
+
+enum WarehouseType {
+  MAIN
+  FACTORY_FINAL_PRODUCT
+  BRANCH
+}
+
+enum SalesRepStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum CustomerType {
+  BUSINESS
+  INDIVIDUAL
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ProductUnitType {
+  GM
+  KG
+  ML
+  L
+}
+
+enum PriceListStatus {
+  DRAFT
+  ACTIVE
+  SCHEDULED
+  ARCHIVED
+  DELETED
+}
+
+enum PriceAssignmentScope {
+  GLOBAL
+  CUSTOMER
+  CUSTOMER_GROUP
+  OFFICE
+}
+
+enum DiscountValueType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum DiscountRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  USED
+}
+
+enum InventoryMovementType {
+  STOCK_ADJUSTMENT
+  RESERVATION
+  RESERVATION_RELEASE
+  RESERVATION_CONSUME
+  RETURN_RECEIPT
+  TRANSFER_DISPATCH
+  TRANSFER_RECEIPT
+}
+
+enum StockReservationStatus {
+  ACTIVE
+  RELEASED
+  CONSUMED
+  CANCELLED
+}
+
+enum RouteScheduleStatus {
+  ACTIVE
+  INACTIVE
+  DELETED
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum OrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  RESERVED
+  LOADING
+  DELIVERED
+  CANCELLED
+  AMENDMENT_PENDING
+}
+
+enum DeliveryStatus {
+  PLANNED
+  DISPATCHED
+  PARTIALLY_DELIVERED
+  DELIVERED
+  CANCELLED
+}
+
+enum SalesInvoiceStatus {
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  CHEQUE
+  BANK_TRANSFER
+  CARD
+}
+
+enum PaymentStatus {
+  POSTED
+  CANCELLED
+}
+
+enum ChequeStatus {
+  RECEIVED
+  DEPOSITED
+  REALIZED
+  RETURNED
+  CANCELLED
+}
+
+enum SalesReturnStatus {
+  REQUESTED
+  APPROVED
+  RECEIVED
+  REJECTED
+  CANCELLED
+}
+
+enum CommissionRunStatus {
+  DRAFT
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+enum WarehouseTransferStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  DISPATCHED
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED
+}
+
+enum CustomerVisitType {
+  SALES
+  COLLECTION
+  COMPLAINT
+  DELIVERY_FOLLOW_UP
+}
+
+enum CustomerVisitStatus {
+  PLANNED
+  COMPLETED
+  MISSED
+  CANCELLED
+}
+
+enum CustomerVisitOutcome {
+  ORDER_PLACED
+  NO_ORDER
+  COLLECTION_RECEIVED
+  COMPLAINT_RECORDED
+  FOLLOW_UP_REQUIRED
+  OTHER
+}
+
+enum AttachmentOwnerType {
+  CUSTOMER
+  ORDER
+  DELIVERY
+  SALES_INVOICE
+  PAYMENT
+  CHEQUE
+  RETURN
+  CUSTOMER_VISIT
+  PRODUCT
+  WAREHOUSE_TRANSFER
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
+enum SystemSettingValueType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+}
+
+model User {
+  id           Int        @id @default(autoincrement())
+  email        String     @unique @db.VarChar(191)
+  passwordHash String     @map("password_hash") @db.VarChar(255)
+  displayName  String     @map("display_name") @db.VarChar(160)
+  telephone    String?    @db.VarChar(40)
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?  @map("last_login_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  createdById  Int?       @map("created_by_id")
+  updatedById  Int?       @map("updated_by_id")
+  deletedAt    DateTime?  @map("deleted_at")
+  deletedById  Int?       @map("deleted_by_id")
+
+  roles                          UserRole[]
+  auditLogs                      AuditLog[]                       @relation("AuditActor")
+  salesReps                      SalesRep[]
+  customerChangeRequests         CustomerChangeRequest[]          @relation("CustomerChangeRequestedBy")
+  reviewedCustomerChangeRequests CustomerChangeRequest[]          @relation("CustomerChangeReviewedBy")
+  customerChangeHistory          CustomerChangeHistory[]          @relation("CustomerHistoryChangedBy")
+  requestedOrderAmendments       OrderAmendmentRequest[]          @relation("OrderAmendmentRequestedBy")
+  reviewedOrderAmendments        OrderAmendmentRequest[]          @relation("OrderAmendmentReviewedBy")
+  requestedCreditOverrides       CreditOverrideRequest[]          @relation("CreditOverrideRequestedBy")
+  reviewedCreditOverrides        CreditOverrideRequest[]          @relation("CreditOverrideReviewedBy")
+  uploadedAttachments            Attachment[]                     @relation("AttachmentUploadedBy")
+  notifications                  Notification[]                   @relation("NotificationUser")
+  createdNotifications           Notification[]                   @relation("NotificationCreatedBy")
+  requestedWarehouseTransfers    WarehouseTransfer[]              @relation("WarehouseTransferRequestedBy")
+  approvedWarehouseTransfers     WarehouseTransfer[]              @relation("WarehouseTransferApprovedBy")
+  dispatchedWarehouseTransfers   WarehouseTransfer[]              @relation("WarehouseTransferDispatchedBy")
+  receivedWarehouseTransfers     WarehouseTransfer[]              @relation("WarehouseTransferReceivedBy")
+  warehouseTransferHistory       WarehouseTransferStatusHistory[] @relation("WarehouseTransferHistoryChangedBy")
+
+  @@index([status])
+  @@map("users")
+}
+
+model Company {
+  id                    Int          @id @default(autoincrement())
+  name                  String       @unique @db.VarChar(160)
+  registrationNumber    String?      @map("registration_number") @db.VarChar(80)
+  vatRegistrationNumber String?      @map("vat_registration_number") @db.VarChar(80)
+  address               String?      @db.VarChar(500)
+  email                 String?      @db.VarChar(191)
+  telephone             String?      @db.VarChar(120)
+  status                RecordStatus @default(ACTIVE)
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+  createdById           Int?         @map("created_by_id")
+  updatedById           Int?         @map("updated_by_id")
+  deletedAt             DateTime?    @map("deleted_at")
+  deletedById           Int?         @map("deleted_by_id")
+
+  offices    Office[]
+  factories  Factory[]
+  warehouses Warehouse[]
+  priceLists PriceList[]
+
+  @@index([status])
+  @@map("companies")
+}
+
+model Office {
+  id            Int          @id @default(autoincrement())
+  companyId     Int          @map("company_id")
+  code          String       @unique @db.VarChar(40)
+  name          String       @db.VarChar(160)
+  officeType    OfficeType   @map("office_type")
+  address       String?      @db.VarChar(500)
+  email         String?      @db.VarChar(191)
+  contactPerson String?      @map("contact_person") @db.VarChar(160)
+  telephone     String?      @db.VarChar(120)
+  status        RecordStatus @default(ACTIVE)
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  createdById   Int?         @map("created_by_id")
+  updatedById   Int?         @map("updated_by_id")
+  deletedAt     DateTime?    @map("deleted_at")
+  deletedById   Int?         @map("deleted_by_id")
+
+  company              Company               @relation(fields: [companyId], references: [id])
+  warehouses           Warehouse[]
+  salesReps            SalesRep[]
+  customers            Customer[]
+  routes               Route[]
+  orders               Order[]
+  priceListAssignments PriceListAssignment[]
+
+  @@index([companyId])
+  @@index([officeType])
+  @@index([status])
+  @@map("offices")
+}
+
+model Factory {
+  id            Int          @id @default(autoincrement())
+  companyId     Int          @map("company_id")
+  code          String       @unique @db.VarChar(40)
+  name          String       @db.VarChar(160)
+  address       String?      @db.VarChar(500)
+  email         String?      @db.VarChar(191)
+  contactPerson String?      @map("contact_person") @db.VarChar(160)
+  telephone     String?      @db.VarChar(120)
+  status        RecordStatus @default(ACTIVE)
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  createdById   Int?         @map("created_by_id")
+  updatedById   Int?         @map("updated_by_id")
+  deletedAt     DateTime?    @map("deleted_at")
+  deletedById   Int?         @map("deleted_by_id")
+
+  company        Company                @relation(fields: [companyId], references: [id])
+  warehouses     Warehouse[]
+  productSources ProductFactorySource[]
+
+  @@index([companyId])
+  @@index([status])
+  @@map("factories")
+}
+
+model Warehouse {
+  id            Int           @id @default(autoincrement())
+  companyId     Int           @map("company_id")
+  officeId      Int?          @map("office_id")
+  factoryId     Int?          @map("factory_id")
+  code          String        @unique @db.VarChar(40)
+  name          String        @db.VarChar(160)
+  warehouseType WarehouseType @map("warehouse_type")
+  address       String?       @db.VarChar(500)
+  email         String?       @db.VarChar(191)
+  contactPerson String?       @map("contact_person") @db.VarChar(160)
+  telephone     String?       @db.VarChar(120)
+  status        RecordStatus  @default(ACTIVE)
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  createdById   Int?          @map("created_by_id")
+  updatedById   Int?          @map("updated_by_id")
+  deletedAt     DateTime?     @map("deleted_at")
+  deletedById   Int?          @map("deleted_by_id")
+
+  company            Company             @relation(fields: [companyId], references: [id])
+  office             Office?             @relation(fields: [officeId], references: [id])
+  factory            Factory?            @relation(fields: [factoryId], references: [id])
+  inventoryStocks    InventoryStock[]
+  inventoryMovements InventoryMovement[]
+  stockReservations  StockReservation[]
+  orders             Order[]
+  deliveries         Delivery[]
+  outgoingTransfers  WarehouseTransfer[] @relation("TransferFromWarehouse")
+  incomingTransfers  WarehouseTransfer[] @relation("TransferToWarehouse")
+
+  @@index([companyId])
+  @@index([officeId])
+  @@index([factoryId])
+  @@index([warehouseType])
+  @@index([status])
+  @@map("warehouses")
+}
+
+model SalesRep {
+  id          Int            @id @default(autoincrement())
+  officeId    Int            @map("office_id")
+  userId      Int?           @map("user_id")
+  code        String         @unique @db.VarChar(40)
+  name        String         @db.VarChar(160)
+  nic         String         @db.VarChar(80)
+  address     String?        @db.VarChar(500)
+  telephone   String?        @db.VarChar(120)
+  email       String?        @db.VarChar(191)
+  status      SalesRepStatus @default(ACTIVE)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  createdById Int?           @map("created_by_id")
+  updatedById Int?           @map("updated_by_id")
+  deletedAt   DateTime?      @map("deleted_at")
+  deletedById Int?           @map("deleted_by_id")
+
+  office          Office           @relation(fields: [officeId], references: [id])
+  user            User?            @relation(fields: [userId], references: [id])
+  customers       Customer[]
+  orders          Order[]
+  salesTargets    SalesTarget[]
+  commissionRules CommissionRule[]
+  commissionRuns  CommissionRun[]
+  customerVisits  CustomerVisit[]
+
+  @@index([officeId])
+  @@index([userId])
+  @@index([status])
+  @@map("sales_reps")
+}
+
+model Customer {
+  id                    Int          @id @default(autoincrement())
+  officeId              Int          @map("office_id")
+  salesRepId            Int?         @map("sales_rep_id")
+  code                  String       @unique @db.VarChar(40)
+  customerType          CustomerType @map("customer_type")
+  displayName           String       @map("display_name") @db.VarChar(180)
+  registrationNumber    String?      @map("registration_number") @db.VarChar(80)
+  vatRegistrationNumber String?      @map("vat_registration_number") @db.VarChar(80)
+  nic                   String?      @db.VarChar(80)
+  address               String?      @db.VarChar(500)
+  telephone             String?      @db.VarChar(120)
+  contactPerson         String?      @map("contact_person") @db.VarChar(160)
+  email                 String?      @db.VarChar(191)
+  creditLimit           Decimal      @default(0) @map("credit_limit") @db.Decimal(12, 2)
+  creditHold            Boolean      @default(false) @map("credit_hold")
+  creditTermsDays       Int          @default(30) @map("credit_terms_days")
+  latitude              Decimal?     @db.Decimal(10, 7)
+  longitude             Decimal?     @db.Decimal(10, 7)
+  geoAccuracyMeters     Decimal?     @map("geo_accuracy_meters") @db.Decimal(10, 2)
+  geoCapturedAt         DateTime?    @map("geo_captured_at")
+  status                RecordStatus @default(ACTIVE)
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+  createdById           Int?         @map("created_by_id")
+  updatedById           Int?         @map("updated_by_id")
+  deletedAt             DateTime?    @map("deleted_at")
+  deletedById           Int?         @map("deleted_by_id")
+
+  office                     Office                          @relation(fields: [officeId], references: [id])
+  salesRep                   SalesRep?                       @relation(fields: [salesRepId], references: [id])
+  changeRequests             CustomerChangeRequest[]
+  history                    CustomerChangeHistory[]
+  customerGroupMembers       CustomerGroupMember[]
+  discountAssignments        CustomerDiscountAssignment[]
+  additionalDiscountRequests AdditionalBillDiscountRequest[]
+  priceListAssignments       PriceListAssignment[]
+  routeAssignments           RouteCustomer[]
+  orders                     Order[]
+  deliveries                 Delivery[]
+  salesInvoices              SalesInvoice[]
+  payments                   Payment[]
+  cheques                    Cheque[]
+  salesReturns               SalesReturn[]
+  creditOverrideRequests     CreditOverrideRequest[]
+  visits                     CustomerVisit[]
+
+  @@index([officeId])
+  @@index([salesRepId])
+  @@index([customerType])
+  @@index([latitude, longitude])
+  @@index([status])
+  @@map("customers")
+}
+
+model CustomerChangeRequest {
+  id               Int            @id @default(autoincrement())
+  customerId       Int            @map("customer_id")
+  requestedById    Int            @map("requested_by_id")
+  reviewedById     Int?           @map("reviewed_by_id")
+  status           ApprovalStatus @default(PENDING)
+  requestedChanges Json           @map("requested_changes")
+  reason           String?        @db.VarChar(500)
+  reviewNote       String?        @map("review_note") @db.VarChar(500)
+  createdAt        DateTime       @default(now()) @map("created_at")
+  reviewedAt       DateTime?      @map("reviewed_at")
+
+  customer    Customer @relation(fields: [customerId], references: [id])
+  requestedBy User     @relation("CustomerChangeRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy  User?    @relation("CustomerChangeReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([customerId])
+  @@index([requestedById])
+  @@index([reviewedById])
+  @@index([status])
+  @@map("customer_change_requests")
+}
+
+model CustomerChangeHistory {
+  id              Int      @id @default(autoincrement())
+  customerId      Int      @map("customer_id")
+  changeRequestId Int?     @map("change_request_id")
+  changedById     Int?     @map("changed_by_id")
+  oldValues       Json?    @map("old_values")
+  newValues       Json     @map("new_values")
+  changedAt       DateTime @default(now()) @map("changed_at")
+
+  customer  Customer @relation(fields: [customerId], references: [id])
+  changedBy User?    @relation("CustomerHistoryChangedBy", fields: [changedById], references: [id])
+
+  @@index([customerId])
+  @@index([changeRequestId])
+  @@index([changedById])
+  @@map("customer_change_history")
+}
+
+model ProductGroup {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique @db.VarChar(40)
+  name        String       @db.VarChar(160)
+  description String?      @db.VarChar(500)
+  status      RecordStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  createdById Int?         @map("created_by_id")
+  updatedById Int?         @map("updated_by_id")
+  deletedAt   DateTime?    @map("deleted_at")
+  deletedById Int?         @map("deleted_by_id")
+
+  products Product[]
+
+  @@index([status])
+  @@map("product_groups")
+}
+
+model Product {
+  id             Int             @id @default(autoincrement())
+  productGroupId Int             @map("product_group_id")
+  code           String          @unique @db.VarChar(40)
+  name           String          @db.VarChar(180)
+  price          Decimal         @db.Decimal(12, 2)
+  capacity       Decimal         @db.Decimal(12, 3)
+  unitType       ProductUnitType @map("unit_type")
+  supportsBulk   Boolean         @default(false) @map("supports_bulk")
+  status         RecordStatus    @default(ACTIVE)
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  createdById    Int?            @map("created_by_id")
+  updatedById    Int?            @map("updated_by_id")
+  deletedAt      DateTime?       @map("deleted_at")
+  deletedById    Int?            @map("deleted_by_id")
+
+  productGroup           ProductGroup             @relation(fields: [productGroupId], references: [id])
+  packagingOptions       ProductPackagingOption[]
+  factorySources         ProductFactorySource[]
+  priceListItems         PriceListItem[]
+  priceHistory           ProductPriceHistory[]
+  seasonalDiscounts      SeasonalDiscount[]
+  freeItemOffers         FreeItemOffer[]
+  inventoryStocks        InventoryStock[]
+  inventoryMovements     InventoryMovement[]
+  stockReservations      StockReservation[]
+  orderItems             OrderItem[]
+  deliveryItems          DeliveryItem[]
+  salesInvoiceItems      SalesInvoiceItem[]
+  salesReturnItems       SalesReturnItem[]
+  salesTargets           SalesTarget[]
+  commissionRules        CommissionRule[]
+  warehouseTransferItems WarehouseTransferItem[]
+
+  @@index([productGroupId])
+  @@index([status])
+  @@map("products")
+}
+
+model ProductPackagingOption {
+  id           Int          @id @default(autoincrement())
+  productId    Int          @map("product_id")
+  name         String       @db.VarChar(120)
+  unitQuantity Int          @map("unit_quantity")
+  isDefault    Boolean      @default(false) @map("is_default")
+  status       RecordStatus @default(ACTIVE)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  product    Product     @relation(fields: [productId], references: [id])
+  orderItems OrderItem[]
+
+  @@unique([productId, name])
+  @@index([productId])
+  @@index([status])
+  @@map("product_packaging_options")
+}
+
+model ProductFactorySource {
+  productId  Int      @map("product_id")
+  factoryId  Int      @map("factory_id")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  product Product @relation(fields: [productId], references: [id])
+  factory Factory @relation(fields: [factoryId], references: [id])
+
+  @@id([productId, factoryId])
+  @@index([factoryId])
+  @@map("product_factory_sources")
+}
+
+model CustomerGroup {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique @db.VarChar(40)
+  name        String       @db.VarChar(160)
+  description String?      @db.VarChar(500)
+  status      RecordStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  createdById Int?         @map("created_by_id")
+  updatedById Int?         @map("updated_by_id")
+  deletedAt   DateTime?    @map("deleted_at")
+  deletedById Int?         @map("deleted_by_id")
+
+  members              CustomerGroupMember[]
+  priceListAssignments PriceListAssignment[]
+
+  @@index([status])
+  @@map("customer_groups")
+}
+
+model CustomerGroupMember {
+  customerGroupId Int      @map("customer_group_id")
+  customerId      Int      @map("customer_id")
+  assignedAt      DateTime @default(now()) @map("assigned_at")
+  assignedById    Int?     @map("assigned_by_id")
+
+  customerGroup CustomerGroup @relation(fields: [customerGroupId], references: [id])
+  customer      Customer      @relation(fields: [customerId], references: [id])
+
+  @@id([customerGroupId, customerId])
+  @@index([customerId])
+  @@map("customer_group_members")
+}
+
+model PriceList {
+  id            Int             @id @default(autoincrement())
+  companyId     Int             @map("company_id")
+  code          String          @unique @db.VarChar(40)
+  name          String          @db.VarChar(160)
+  effectiveFrom DateTime        @map("effective_from")
+  effectiveTo   DateTime?       @map("effective_to")
+  status        PriceListStatus @default(DRAFT)
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  createdById   Int?            @map("created_by_id")
+  updatedById   Int?            @map("updated_by_id")
+  deletedAt     DateTime?       @map("deleted_at")
+  deletedById   Int?            @map("deleted_by_id")
+
+  company     Company               @relation(fields: [companyId], references: [id])
+  items       PriceListItem[]
+  assignments PriceListAssignment[]
+
+  @@index([companyId])
+  @@index([status])
+  @@index([effectiveFrom])
+  @@map("price_lists")
+}
+
+model PriceListItem {
+  id          Int      @id @default(autoincrement())
+  priceListId Int      @map("price_list_id")
+  productId   Int      @map("product_id")
+  unitPrice   Decimal  @map("unit_price") @db.Decimal(12, 2)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  priceList PriceList @relation(fields: [priceListId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@unique([priceListId, productId])
+  @@index([productId])
+  @@map("price_list_items")
+}
+
+model PriceListAssignment {
+  id              Int                  @id @default(autoincrement())
+  priceListId     Int                  @map("price_list_id")
+  scope           PriceAssignmentScope
+  customerId      Int?                 @map("customer_id")
+  customerGroupId Int?                 @map("customer_group_id")
+  officeId        Int?                 @map("office_id")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  createdById     Int?                 @map("created_by_id")
+
+  priceList     PriceList      @relation(fields: [priceListId], references: [id])
+  customer      Customer?      @relation(fields: [customerId], references: [id])
+  customerGroup CustomerGroup? @relation(fields: [customerGroupId], references: [id])
+  office        Office?        @relation(fields: [officeId], references: [id])
+
+  @@index([priceListId])
+  @@index([scope])
+  @@index([customerId])
+  @@index([customerGroupId])
+  @@index([officeId])
+  @@map("price_list_assignments")
+}
+
+model ProductPriceHistory {
+  id          Int      @id @default(autoincrement())
+  productId   Int      @map("product_id")
+  priceListId Int?     @map("price_list_id")
+  oldPrice    Decimal? @map("old_price") @db.Decimal(12, 2)
+  newPrice    Decimal  @map("new_price") @db.Decimal(12, 2)
+  changedAt   DateTime @default(now()) @map("changed_at")
+  changedById Int?     @map("changed_by_id")
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([priceListId])
+  @@index([changedAt])
+  @@map("product_price_history")
+}
+
+model DiscountClass {
+  id                 Int          @id @default(autoincrement())
+  code               String       @unique @db.VarChar(40)
+  name               String       @db.VarChar(160)
+  discountPercentage Decimal      @map("discount_percentage") @db.Decimal(5, 2)
+  status             RecordStatus @default(ACTIVE)
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+  createdById        Int?         @map("created_by_id")
+  updatedById        Int?         @map("updated_by_id")
+  deletedAt          DateTime?    @map("deleted_at")
+  deletedById        Int?         @map("deleted_by_id")
+
+  customerAssignments CustomerDiscountAssignment[]
+
+  @@index([status])
+  @@map("discount_classes")
+}
+
+model CustomerDiscountAssignment {
+  id              Int       @id @default(autoincrement())
+  customerId      Int       @map("customer_id")
+  discountClassId Int       @map("discount_class_id")
+  effectiveFrom   DateTime  @map("effective_from")
+  effectiveTo     DateTime? @map("effective_to")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  createdById     Int?      @map("created_by_id")
+
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  discountClass DiscountClass @relation(fields: [discountClassId], references: [id])
+
+  @@index([customerId])
+  @@index([discountClassId])
+  @@index([effectiveFrom])
+  @@map("customer_discount_assignments")
+}
+
+model SeasonalDiscount {
+  id          Int               @id @default(autoincrement())
+  productId   Int               @map("product_id")
+  name        String            @db.VarChar(160)
+  valueType   DiscountValueType @map("value_type")
+  value       Decimal           @db.Decimal(12, 2)
+  validFrom   DateTime          @map("valid_from")
+  validTo     DateTime          @map("valid_to")
+  status      RecordStatus      @default(ACTIVE)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  createdById Int?              @map("created_by_id")
+  updatedById Int?              @map("updated_by_id")
+  deletedAt   DateTime?         @map("deleted_at")
+  deletedById Int?              @map("deleted_by_id")
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([validFrom, validTo])
+  @@index([status])
+  @@map("seasonal_discounts")
+}
+
+model FreeItemOffer {
+  id           Int          @id @default(autoincrement())
+  productId    Int          @map("product_id")
+  name         String       @db.VarChar(160)
+  buyQuantity  Int          @map("buy_quantity")
+  freeQuantity Int          @map("free_quantity")
+  validFrom    DateTime     @map("valid_from")
+  validTo      DateTime     @map("valid_to")
+  status       RecordStatus @default(ACTIVE)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  createdById  Int?         @map("created_by_id")
+  updatedById  Int?         @map("updated_by_id")
+  deletedAt    DateTime?    @map("deleted_at")
+  deletedById  Int?         @map("deleted_by_id")
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([validFrom, validTo])
+  @@index([status])
+  @@map("free_item_offers")
+}
+
+model AdditionalBillDiscountRequest {
+  id                 Int                   @id @default(autoincrement())
+  customerId         Int                   @map("customer_id")
+  requestedById      Int                   @map("requested_by_id")
+  reviewedById       Int?                  @map("reviewed_by_id")
+  discountPercentage Decimal               @map("discount_percentage") @db.Decimal(5, 2)
+  reason             String?               @db.VarChar(500)
+  status             DiscountRequestStatus @default(PENDING)
+  reviewNote         String?               @map("review_note") @db.VarChar(500)
+  createdAt          DateTime              @default(now()) @map("created_at")
+  reviewedAt         DateTime?             @map("reviewed_at")
+  usedAt             DateTime?             @map("used_at")
+
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@index([customerId])
+  @@index([requestedById])
+  @@index([reviewedById])
+  @@index([status])
+  @@map("additional_bill_discount_requests")
+}
+
+model InventoryStock {
+  id                Int      @id @default(autoincrement())
+  warehouseId       Int      @map("warehouse_id")
+  productId         Int      @map("product_id")
+  onHandQuantity    Decimal  @default(0) @map("on_hand_quantity") @db.Decimal(12, 3)
+  reservedQuantity  Decimal  @default(0) @map("reserved_quantity") @db.Decimal(12, 3)
+  lowStockThreshold Decimal  @default(0) @map("low_stock_threshold") @db.Decimal(12, 3)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@unique([warehouseId, productId])
+  @@index([productId])
+  @@map("inventory_stocks")
+}
+
+model InventoryMovement {
+  id            Int                   @id @default(autoincrement())
+  warehouseId   Int                   @map("warehouse_id")
+  productId     Int                   @map("product_id")
+  movementType  InventoryMovementType @map("movement_type")
+  quantity      Decimal               @db.Decimal(12, 3)
+  balanceAfter  Decimal               @map("balance_after") @db.Decimal(12, 3)
+  referenceType String?               @map("reference_type") @db.VarChar(80)
+  referenceId   String?               @map("reference_id") @db.VarChar(120)
+  notes         String?               @db.VarChar(500)
+  createdById   Int?                  @map("created_by_id")
+  createdAt     DateTime              @default(now()) @map("created_at")
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@index([warehouseId])
+  @@index([productId])
+  @@index([movementType])
+  @@index([referenceType, referenceId])
+  @@index([createdAt])
+  @@map("inventory_movements")
+}
+
+model StockReservation {
+  id           Int                    @id @default(autoincrement())
+  warehouseId  Int                    @map("warehouse_id")
+  productId    Int                    @map("product_id")
+  orderId      Int?                   @map("order_id")
+  quantity     Decimal                @db.Decimal(12, 3)
+  status       StockReservationStatus @default(ACTIVE)
+  notes        String?                @db.VarChar(500)
+  createdById  Int?                   @map("created_by_id")
+  releasedById Int?                   @map("released_by_id")
+  createdAt    DateTime               @default(now()) @map("created_at")
+  releasedAt   DateTime?              @map("released_at")
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+  order     Order?    @relation(fields: [orderId], references: [id])
+
+  @@index([warehouseId])
+  @@index([productId])
+  @@index([orderId])
+  @@index([status])
+  @@map("stock_reservations")
+}
+
+model Route {
+  id          Int          @id @default(autoincrement())
+  officeId    Int          @map("office_id")
+  code        String       @unique @db.VarChar(40)
+  name        String       @db.VarChar(160)
+  description String?      @db.VarChar(500)
+  status      RecordStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  createdById Int?         @map("created_by_id")
+  updatedById Int?         @map("updated_by_id")
+  deletedAt   DateTime?    @map("deleted_at")
+  deletedById Int?         @map("deleted_by_id")
+
+  office     Office          @relation(fields: [officeId], references: [id])
+  customers  RouteCustomer[]
+  schedules  RouteSchedule[]
+  orders     Order[]
+  deliveries Delivery[]
+
+  @@index([officeId])
+  @@index([status])
+  @@map("routes")
+}
+
+model RouteCustomer {
+  routeId      Int      @map("route_id")
+  customerId   Int      @map("customer_id")
+  assignedAt   DateTime @default(now()) @map("assigned_at")
+  assignedById Int?     @map("assigned_by_id")
+
+  route    Route    @relation(fields: [routeId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@id([routeId, customerId])
+  @@index([customerId])
+  @@map("route_customers")
+}
+
+model RouteSchedule {
+  id          Int                 @id @default(autoincrement())
+  routeId     Int                 @map("route_id")
+  dayOfWeek   DayOfWeek           @map("day_of_week")
+  plannedTime String?             @map("planned_time") @db.VarChar(20)
+  status      RouteScheduleStatus @default(ACTIVE)
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  route Route @relation(fields: [routeId], references: [id])
+
+  @@unique([routeId, dayOfWeek])
+  @@index([status])
+  @@map("route_schedules")
+}
+
+model Order {
+  id            Int         @id @default(autoincrement())
+  orderNumber   String      @unique @map("order_number") @db.VarChar(40)
+  customerId    Int         @map("customer_id")
+  salesRepId    Int?        @map("sales_rep_id")
+  officeId      Int         @map("office_id")
+  routeId       Int?        @map("route_id")
+  warehouseId   Int?        @map("warehouse_id")
+  orderDate     DateTime    @map("order_date")
+  status        OrderStatus @default(DRAFT)
+  subtotal      Decimal     @default(0) @db.Decimal(12, 2)
+  discountTotal Decimal     @default(0) @map("discount_total") @db.Decimal(12, 2)
+  totalAmount   Decimal     @default(0) @map("total_amount") @db.Decimal(12, 2)
+  notes         String?     @db.VarChar(500)
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  createdById   Int?        @map("created_by_id")
+  updatedById   Int?        @map("updated_by_id")
+  deletedAt     DateTime?   @map("deleted_at")
+  deletedById   Int?        @map("deleted_by_id")
+
+  customer               Customer                @relation(fields: [customerId], references: [id])
+  salesRep               SalesRep?               @relation(fields: [salesRepId], references: [id])
+  office                 Office                  @relation(fields: [officeId], references: [id])
+  route                  Route?                  @relation(fields: [routeId], references: [id])
+  warehouse              Warehouse?              @relation(fields: [warehouseId], references: [id])
+  items                  OrderItem[]
+  reservations           StockReservation[]
+  amendments             OrderAmendmentRequest[]
+  delivery               Delivery?
+  salesInvoice           SalesInvoice?
+  returns                SalesReturn[]
+  creditOverrideRequests CreditOverrideRequest[]
+
+  @@index([customerId])
+  @@index([salesRepId])
+  @@index([officeId])
+  @@index([routeId])
+  @@index([warehouseId])
+  @@index([orderDate])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                Int      @id @default(autoincrement())
+  orderId           Int      @map("order_id")
+  productId         Int      @map("product_id")
+  packagingOptionId Int?     @map("packaging_option_id")
+  quantity          Decimal  @db.Decimal(12, 3)
+  freeQuantity      Decimal  @default(0) @map("free_quantity") @db.Decimal(12, 3)
+  unitPrice         Decimal  @map("unit_price") @db.Decimal(12, 2)
+  discountAmount    Decimal  @default(0) @map("discount_amount") @db.Decimal(12, 2)
+  lineTotal         Decimal  @map("line_total") @db.Decimal(12, 2)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  order           Order                   @relation(fields: [orderId], references: [id])
+  product         Product                 @relation(fields: [productId], references: [id])
+  packagingOption ProductPackagingOption? @relation(fields: [packagingOptionId], references: [id])
+  deliveryItems   DeliveryItem[]
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([packagingOptionId])
+  @@map("order_items")
+}
+
+model OrderAmendmentRequest {
+  id               Int            @id @default(autoincrement())
+  orderId          Int            @map("order_id")
+  requestedById    Int            @map("requested_by_id")
+  reviewedById     Int?           @map("reviewed_by_id")
+  status           ApprovalStatus @default(PENDING)
+  requestedChanges Json           @map("requested_changes")
+  reason           String?        @db.VarChar(500)
+  reviewNote       String?        @map("review_note") @db.VarChar(500)
+  createdAt        DateTime       @default(now()) @map("created_at")
+  reviewedAt       DateTime?      @map("reviewed_at")
+
+  order       Order @relation(fields: [orderId], references: [id])
+  requestedBy User  @relation("OrderAmendmentRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy  User? @relation("OrderAmendmentReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([orderId])
+  @@index([requestedById])
+  @@index([reviewedById])
+  @@index([status])
+  @@map("order_amendment_requests")
+}
+
+model Delivery {
+  id             Int            @id @default(autoincrement())
+  deliveryNumber String         @unique @map("delivery_number") @db.VarChar(40)
+  orderId        Int            @unique @map("order_id")
+  customerId     Int            @map("customer_id")
+  routeId        Int?           @map("route_id")
+  warehouseId    Int            @map("warehouse_id")
+  deliveryDate   DateTime       @map("delivery_date")
+  status         DeliveryStatus @default(PLANNED)
+  driverName     String?        @map("driver_name") @db.VarChar(160)
+  vehicleNumber  String?        @map("vehicle_number") @db.VarChar(80)
+  receivedBy     String?        @map("received_by") @db.VarChar(160)
+  proofNotes     String?        @map("proof_notes") @db.VarChar(500)
+  notes          String?        @db.VarChar(500)
+  dispatchedAt   DateTime?      @map("dispatched_at")
+  deliveredAt    DateTime?      @map("delivered_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  createdById    Int?           @map("created_by_id")
+  updatedById    Int?           @map("updated_by_id")
+
+  order     Order          @relation(fields: [orderId], references: [id])
+  customer  Customer       @relation(fields: [customerId], references: [id])
+  route     Route?         @relation(fields: [routeId], references: [id])
+  warehouse Warehouse      @relation(fields: [warehouseId], references: [id])
+  items     DeliveryItem[]
+
+  @@index([customerId])
+  @@index([routeId])
+  @@index([warehouseId])
+  @@index([deliveryDate])
+  @@index([status])
+  @@map("deliveries")
+}
+
+model DeliveryItem {
+  id                Int      @id @default(autoincrement())
+  deliveryId        Int      @map("delivery_id")
+  orderItemId       Int      @map("order_item_id")
+  productId         Int      @map("product_id")
+  orderedQuantity   Decimal  @map("ordered_quantity") @db.Decimal(12, 3)
+  deliveredQuantity Decimal  @default(0) @map("delivered_quantity") @db.Decimal(12, 3)
+  rejectedQuantity  Decimal  @default(0) @map("rejected_quantity") @db.Decimal(12, 3)
+  notes             String?  @db.VarChar(500)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  delivery  Delivery  @relation(fields: [deliveryId], references: [id])
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@unique([deliveryId, orderItemId])
+  @@index([productId])
+  @@map("delivery_items")
+}
+
+model SalesInvoice {
+  id            Int                @id @default(autoincrement())
+  invoiceNumber String             @unique @map("invoice_number") @db.VarChar(40)
+  orderId       Int?               @unique @map("order_id")
+  customerId    Int                @map("customer_id")
+  invoiceDate   DateTime           @map("invoice_date")
+  dueDate       DateTime           @map("due_date")
+  subtotal      Decimal            @default(0) @db.Decimal(12, 2)
+  discountTotal Decimal            @default(0) @map("discount_total") @db.Decimal(12, 2)
+  returnTotal   Decimal            @default(0) @map("return_total") @db.Decimal(12, 2)
+  paidAmount    Decimal            @default(0) @map("paid_amount") @db.Decimal(12, 2)
+  balanceAmount Decimal            @default(0) @map("balance_amount") @db.Decimal(12, 2)
+  totalAmount   Decimal            @default(0) @map("total_amount") @db.Decimal(12, 2)
+  status        SalesInvoiceStatus @default(ISSUED)
+  notes         String?            @db.VarChar(500)
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+  createdById   Int?               @map("created_by_id")
+  updatedById   Int?               @map("updated_by_id")
+  deletedAt     DateTime?          @map("deleted_at")
+  deletedById   Int?               @map("deleted_by_id")
+
+  order    Order?             @relation(fields: [orderId], references: [id])
+  customer Customer           @relation(fields: [customerId], references: [id])
+  items    SalesInvoiceItem[]
+  payments Payment[]
+  cheques  Cheque[]
+  returns  SalesReturn[]
+
+  @@index([customerId])
+  @@index([invoiceDate])
+  @@index([dueDate])
+  @@index([status])
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceItem {
+  id             Int      @id @default(autoincrement())
+  salesInvoiceId Int      @map("sales_invoice_id")
+  productId      Int      @map("product_id")
+  quantity       Decimal  @db.Decimal(12, 3)
+  freeQuantity   Decimal  @default(0) @map("free_quantity") @db.Decimal(12, 3)
+  unitPrice      Decimal  @map("unit_price") @db.Decimal(12, 2)
+  discountAmount Decimal  @default(0) @map("discount_amount") @db.Decimal(12, 2)
+  lineTotal      Decimal  @map("line_total") @db.Decimal(12, 2)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  salesInvoice SalesInvoice @relation(fields: [salesInvoiceId], references: [id])
+  product      Product      @relation(fields: [productId], references: [id])
+
+  @@index([salesInvoiceId])
+  @@index([productId])
+  @@map("sales_invoice_items")
+}
+
+model Payment {
+  id             Int           @id @default(autoincrement())
+  paymentNumber  String        @unique @map("payment_number") @db.VarChar(40)
+  customerId     Int           @map("customer_id")
+  salesInvoiceId Int?          @map("sales_invoice_id")
+  paymentDate    DateTime      @map("payment_date")
+  method         PaymentMethod
+  amount         Decimal       @db.Decimal(12, 2)
+  status         PaymentStatus @default(POSTED)
+  notes          String?       @db.VarChar(500)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  createdById    Int?          @map("created_by_id")
+  cancelledAt    DateTime?     @map("cancelled_at")
+  cancelledById  Int?          @map("cancelled_by_id")
+
+  customer     Customer      @relation(fields: [customerId], references: [id])
+  salesInvoice SalesInvoice? @relation(fields: [salesInvoiceId], references: [id])
+  cheque       Cheque?
+
+  @@index([customerId])
+  @@index([salesInvoiceId])
+  @@index([paymentDate])
+  @@index([method])
+  @@index([status])
+  @@map("payments")
+}
+
+model Cheque {
+  id             Int          @id @default(autoincrement())
+  paymentId      Int?         @unique @map("payment_id")
+  customerId     Int          @map("customer_id")
+  salesInvoiceId Int?         @map("sales_invoice_id")
+  chequeNumber   String       @map("cheque_number") @db.VarChar(80)
+  bankName       String       @map("bank_name") @db.VarChar(160)
+  branchName     String?      @map("branch_name") @db.VarChar(160)
+  chequeDate     DateTime     @map("cheque_date")
+  receivedDate   DateTime     @map("received_date")
+  amount         Decimal      @db.Decimal(12, 2)
+  status         ChequeStatus @default(RECEIVED)
+  returnedReason String?      @map("returned_reason") @db.VarChar(500)
+  depositedAt    DateTime?    @map("deposited_at")
+  realizedAt     DateTime?    @map("realized_at")
+  returnedAt     DateTime?    @map("returned_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  createdById    Int?         @map("created_by_id")
+  updatedById    Int?         @map("updated_by_id")
+
+  payment      Payment?      @relation(fields: [paymentId], references: [id])
+  customer     Customer      @relation(fields: [customerId], references: [id])
+  salesInvoice SalesInvoice? @relation(fields: [salesInvoiceId], references: [id])
+
+  @@unique([bankName, chequeNumber])
+  @@index([customerId])
+  @@index([salesInvoiceId])
+  @@index([status])
+  @@map("cheques")
+}
+
+model SalesReturn {
+  id             Int               @id @default(autoincrement())
+  returnNumber   String            @unique @map("return_number") @db.VarChar(40)
+  customerId     Int               @map("customer_id")
+  orderId        Int?              @map("order_id")
+  salesInvoiceId Int?              @map("sales_invoice_id")
+  returnDate     DateTime          @map("return_date")
+  reason         String            @db.VarChar(500)
+  totalAmount    Decimal           @default(0) @map("total_amount") @db.Decimal(12, 2)
+  status         SalesReturnStatus @default(REQUESTED)
+  notes          String?           @db.VarChar(500)
+  reviewNote     String?           @map("review_note") @db.VarChar(500)
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  createdById    Int?              @map("created_by_id")
+  reviewedAt     DateTime?         @map("reviewed_at")
+  reviewedById   Int?              @map("reviewed_by_id")
+
+  customer     Customer          @relation(fields: [customerId], references: [id])
+  order        Order?            @relation(fields: [orderId], references: [id])
+  salesInvoice SalesInvoice?     @relation(fields: [salesInvoiceId], references: [id])
+  items        SalesReturnItem[]
+
+  @@index([customerId])
+  @@index([orderId])
+  @@index([salesInvoiceId])
+  @@index([returnDate])
+  @@index([status])
+  @@map("sales_returns")
+}
+
+model SalesReturnItem {
+  id            Int      @id @default(autoincrement())
+  salesReturnId Int      @map("sales_return_id")
+  productId     Int      @map("product_id")
+  quantity      Decimal  @db.Decimal(12, 3)
+  unitPrice     Decimal  @map("unit_price") @db.Decimal(12, 2)
+  lineTotal     Decimal  @map("line_total") @db.Decimal(12, 2)
+  notes         String?  @db.VarChar(500)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  salesReturn SalesReturn @relation(fields: [salesReturnId], references: [id])
+  product     Product     @relation(fields: [productId], references: [id])
+
+  @@index([salesReturnId])
+  @@index([productId])
+  @@map("sales_return_items")
+}
+
+model CreditOverrideRequest {
+  id                 Int            @id @default(autoincrement())
+  customerId         Int            @map("customer_id")
+  orderId            Int?           @map("order_id")
+  requestedById      Int            @map("requested_by_id")
+  reviewedById       Int?           @map("reviewed_by_id")
+  status             ApprovalStatus @default(PENDING)
+  requestedAmount    Decimal        @map("requested_amount") @db.Decimal(12, 2)
+  outstandingBalance Decimal        @map("outstanding_balance") @db.Decimal(12, 2)
+  creditLimit        Decimal        @map("credit_limit") @db.Decimal(12, 2)
+  reason             String?        @db.VarChar(500)
+  reviewNote         String?        @map("review_note") @db.VarChar(500)
+  createdAt          DateTime       @default(now()) @map("created_at")
+  reviewedAt         DateTime?      @map("reviewed_at")
+
+  customer    Customer @relation(fields: [customerId], references: [id])
+  order       Order?   @relation(fields: [orderId], references: [id])
+  requestedBy User     @relation("CreditOverrideRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy  User?    @relation("CreditOverrideReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([customerId])
+  @@index([orderId])
+  @@index([requestedById])
+  @@index([reviewedById])
+  @@index([status])
+  @@map("credit_override_requests")
+}
+
+model SalesTarget {
+  id            Int          @id @default(autoincrement())
+  salesRepId    Int          @map("sales_rep_id")
+  productId     Int?         @map("product_id")
+  targetYear    Int          @map("target_year")
+  targetMonth   Int          @map("target_month")
+  revenueTarget Decimal      @default(0) @map("revenue_target") @db.Decimal(12, 2)
+  volumeTarget  Decimal      @default(0) @map("volume_target") @db.Decimal(12, 3)
+  status        RecordStatus @default(ACTIVE)
+  notes         String?      @db.VarChar(500)
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  createdById   Int?         @map("created_by_id")
+  updatedById   Int?         @map("updated_by_id")
+  deletedAt     DateTime?    @map("deleted_at")
+  deletedById   Int?         @map("deleted_by_id")
+
+  salesRep SalesRep @relation(fields: [salesRepId], references: [id])
+  product  Product? @relation(fields: [productId], references: [id])
+
+  @@index([salesRepId])
+  @@index([productId])
+  @@index([targetYear, targetMonth])
+  @@index([status])
+  @@map("sales_targets")
+}
+
+model CommissionRule {
+  id             Int          @id @default(autoincrement())
+  code           String       @unique @db.VarChar(40)
+  name           String       @db.VarChar(160)
+  salesRepId     Int?         @map("sales_rep_id")
+  productId      Int?         @map("product_id")
+  ratePercentage Decimal      @default(0) @map("rate_percentage") @db.Decimal(5, 2)
+  amountPerUnit  Decimal      @default(0) @map("amount_per_unit") @db.Decimal(12, 2)
+  bonusThreshold Decimal      @default(0) @map("bonus_threshold") @db.Decimal(12, 2)
+  bonusAmount    Decimal      @default(0) @map("bonus_amount") @db.Decimal(12, 2)
+  effectiveFrom  DateTime     @map("effective_from")
+  effectiveTo    DateTime?    @map("effective_to")
+  status         RecordStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  createdById    Int?         @map("created_by_id")
+  updatedById    Int?         @map("updated_by_id")
+  deletedAt      DateTime?    @map("deleted_at")
+  deletedById    Int?         @map("deleted_by_id")
+
+  salesRep SalesRep? @relation(fields: [salesRepId], references: [id])
+  product  Product?  @relation(fields: [productId], references: [id])
+
+  @@index([salesRepId])
+  @@index([productId])
+  @@index([effectiveFrom, effectiveTo])
+  @@index([status])
+  @@map("commission_rules")
+}
+
+model CommissionRun {
+  id               Int                 @id @default(autoincrement())
+  salesRepId       Int                 @map("sales_rep_id")
+  periodYear       Int                 @map("period_year")
+  periodMonth      Int                 @map("period_month")
+  revenueAmount    Decimal             @default(0) @map("revenue_amount") @db.Decimal(12, 2)
+  volumeAmount     Decimal             @default(0) @map("volume_amount") @db.Decimal(12, 3)
+  commissionAmount Decimal             @default(0) @map("commission_amount") @db.Decimal(12, 2)
+  bonusAmount      Decimal             @default(0) @map("bonus_amount") @db.Decimal(12, 2)
+  totalAmount      Decimal             @default(0) @map("total_amount") @db.Decimal(12, 2)
+  status           CommissionRunStatus @default(DRAFT)
+  calculatedAt     DateTime            @default(now()) @map("calculated_at")
+  approvedAt       DateTime?           @map("approved_at")
+  paidAt           DateTime?           @map("paid_at")
+  createdById      Int?                @map("created_by_id")
+  approvedById     Int?                @map("approved_by_id")
+
+  salesRep SalesRep @relation(fields: [salesRepId], references: [id])
+
+  @@unique([salesRepId, periodYear, periodMonth])
+  @@index([status])
+  @@map("commission_runs")
+}
+
+model WarehouseTransfer {
+  id              Int                     @id @default(autoincrement())
+  transferNumber  String                  @unique @map("transfer_number") @db.VarChar(40)
+  fromWarehouseId Int                     @map("from_warehouse_id")
+  toWarehouseId   Int                     @map("to_warehouse_id")
+  status          WarehouseTransferStatus @default(REQUESTED)
+  notes           String?                 @db.VarChar(500)
+  requestedById   Int                     @map("requested_by_id")
+  approvedById    Int?                    @map("approved_by_id")
+  dispatchedById  Int?                    @map("dispatched_by_id")
+  receivedById    Int?                    @map("received_by_id")
+  requestedAt     DateTime                @default(now()) @map("requested_at")
+  approvedAt      DateTime?               @map("approved_at")
+  dispatchedAt    DateTime?               @map("dispatched_at")
+  receivedAt      DateTime?               @map("received_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+
+  fromWarehouse Warehouse                        @relation("TransferFromWarehouse", fields: [fromWarehouseId], references: [id])
+  toWarehouse   Warehouse                        @relation("TransferToWarehouse", fields: [toWarehouseId], references: [id])
+  requestedBy   User                             @relation("WarehouseTransferRequestedBy", fields: [requestedById], references: [id])
+  approvedBy    User?                            @relation("WarehouseTransferApprovedBy", fields: [approvedById], references: [id])
+  dispatchedBy  User?                            @relation("WarehouseTransferDispatchedBy", fields: [dispatchedById], references: [id])
+  receivedBy    User?                            @relation("WarehouseTransferReceivedBy", fields: [receivedById], references: [id])
+  items         WarehouseTransferItem[]
+  history       WarehouseTransferStatusHistory[]
+
+  @@index([fromWarehouseId])
+  @@index([toWarehouseId])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("warehouse_transfers")
+}
+
+model WarehouseTransferItem {
+  id                  Int     @id @default(autoincrement())
+  warehouseTransferId Int     @map("warehouse_transfer_id")
+  productId           Int     @map("product_id")
+  requestedQuantity   Decimal @map("requested_quantity") @db.Decimal(12, 3)
+  approvedQuantity    Decimal @default(0) @map("approved_quantity") @db.Decimal(12, 3)
+  dispatchedQuantity  Decimal @default(0) @map("dispatched_quantity") @db.Decimal(12, 3)
+  receivedQuantity    Decimal @default(0) @map("received_quantity") @db.Decimal(12, 3)
+  notes               String? @db.VarChar(500)
+
+  warehouseTransfer WarehouseTransfer @relation(fields: [warehouseTransferId], references: [id])
+  product           Product           @relation(fields: [productId], references: [id])
+
+  @@unique([warehouseTransferId, productId])
+  @@index([productId])
+  @@map("warehouse_transfer_items")
+}
+
+model WarehouseTransferStatusHistory {
+  id                  Int                      @id @default(autoincrement())
+  warehouseTransferId Int                      @map("warehouse_transfer_id")
+  oldStatus           WarehouseTransferStatus? @map("old_status")
+  newStatus           WarehouseTransferStatus  @map("new_status")
+  notes               String?                  @db.VarChar(500)
+  changedById         Int?                     @map("changed_by_id")
+  changedAt           DateTime                 @default(now()) @map("changed_at")
+
+  warehouseTransfer WarehouseTransfer @relation(fields: [warehouseTransferId], references: [id])
+  changedBy         User?             @relation("WarehouseTransferHistoryChangedBy", fields: [changedById], references: [id])
+
+  @@index([warehouseTransferId])
+  @@index([changedById])
+  @@index([changedAt])
+  @@map("warehouse_transfer_status_history")
+}
+
+model CustomerVisit {
+  id                Int                   @id @default(autoincrement())
+  customerId        Int                   @map("customer_id")
+  salesRepId        Int?                  @map("sales_rep_id")
+  visitType         CustomerVisitType     @map("visit_type")
+  status            CustomerVisitStatus   @default(PLANNED)
+  outcome           CustomerVisitOutcome?
+  plannedAt         DateTime?             @map("planned_at")
+  visitedAt         DateTime?             @map("visited_at")
+  noOrderReason     String?               @map("no_order_reason") @db.VarChar(500)
+  collectionAmount  Decimal?              @map("collection_amount") @db.Decimal(12, 2)
+  complaintNotes    String?               @map("complaint_notes") @db.VarChar(500)
+  latitude          Decimal?              @db.Decimal(10, 7)
+  longitude         Decimal?              @db.Decimal(10, 7)
+  geoAccuracyMeters Decimal?              @map("geo_accuracy_meters") @db.Decimal(10, 2)
+  notes             String?               @db.VarChar(500)
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+  createdById       Int?                  @map("created_by_id")
+  updatedById       Int?                  @map("updated_by_id")
+
+  customer Customer  @relation(fields: [customerId], references: [id])
+  salesRep SalesRep? @relation(fields: [salesRepId], references: [id])
+
+  @@index([customerId])
+  @@index([salesRepId])
+  @@index([visitType])
+  @@index([status])
+  @@index([plannedAt])
+  @@index([visitedAt])
+  @@map("customer_visits")
+}
+
+model Attachment {
+  id           Int                 @id @default(autoincrement())
+  ownerType    AttachmentOwnerType @map("owner_type")
+  ownerId      Int                 @map("owner_id")
+  fileName     String              @map("file_name") @db.VarChar(255)
+  mimeType     String              @map("mime_type") @db.VarChar(120)
+  fileSize     Int                 @map("file_size")
+  storagePath  String              @map("storage_path") @db.VarChar(500)
+  checksum     String?             @db.VarChar(128)
+  status       RecordStatus        @default(ACTIVE)
+  uploadedById Int?                @map("uploaded_by_id")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  deletedAt    DateTime?           @map("deleted_at")
+  deletedById  Int?                @map("deleted_by_id")
+
+  uploadedBy User? @relation("AttachmentUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([ownerType, ownerId])
+  @@index([status])
+  @@map("attachments")
+}
+
+model Notification {
+  id          Int                @id @default(autoincrement())
+  userId      Int?               @map("user_id")
+  title       String             @db.VarChar(160)
+  message     String             @db.VarChar(500)
+  type        NotificationType   @default(INFO)
+  module      String?            @db.VarChar(80)
+  entityType  String?            @map("entity_type") @db.VarChar(120)
+  entityId    String?            @map("entity_id") @db.VarChar(120)
+  status      NotificationStatus @default(UNREAD)
+  readAt      DateTime?          @map("read_at")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  createdById Int?               @map("created_by_id")
+
+  user      User? @relation("NotificationUser", fields: [userId], references: [id])
+  createdBy User? @relation("NotificationCreatedBy", fields: [createdById], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model SystemSetting {
+  id          Int                    @id @default(autoincrement())
+  key         String                 @unique @db.VarChar(120)
+  value       Json
+  valueType   SystemSettingValueType @default(STRING) @map("value_type")
+  category    String                 @db.VarChar(80)
+  description String?                @db.VarChar(255)
+  isSensitive Boolean                @default(false) @map("is_sensitive")
+  status      RecordStatus           @default(ACTIVE)
+  createdAt   DateTime               @default(now()) @map("created_at")
+  updatedAt   DateTime               @updatedAt @map("updated_at")
+  createdById Int?                   @map("created_by_id")
+  updatedById Int?                   @map("updated_by_id")
+  deletedAt   DateTime?              @map("deleted_at")
+  deletedById Int?                   @map("deleted_by_id")
+
+  @@index([category])
+  @@index([status])
+  @@map("system_settings")
+}
+
+model Role {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique @db.VarChar(80)
+  name        String       @db.VarChar(120)
+  description String?      @db.VarChar(255)
+  isSystem    Boolean      @default(false) @map("is_system")
+  status      RecordStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  createdById Int?         @map("created_by_id")
+  updatedById Int?         @map("updated_by_id")
+  deletedAt   DateTime?    @map("deleted_at")
+  deletedById Int?         @map("deleted_by_id")
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@index([status])
+  @@map("roles")
+}
+
+model Permission {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique @db.VarChar(120)
+  name        String   @db.VarChar(160)
+  module      String   @db.VarChar(80)
+  description String?  @db.VarChar(255)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model UserRole {
+  userId       Int      @map("user_id")
+  roleId       Int      @map("role_id")
+  assignedAt   DateTime @default(now()) @map("assigned_at")
+  assignedById Int?     @map("assigned_by_id")
+
+  user User @relation(fields: [userId], references: [id])
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       Int      @map("role_id")
+  permissionId Int      @map("permission_id")
+  assignedAt   DateTime @default(now()) @map("assigned_at")
+  assignedById Int?     @map("assigned_by_id")
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model AuditLog {
+  id                Int      @id @default(autoincrement())
+  actorUserId       Int?     @map("actor_user_id")
+  action            String   @db.VarChar(120)
+  entityType        String   @map("entity_type") @db.VarChar(120)
+  entityId          String?  @map("entity_id") @db.VarChar(120)
+  oldValues         Json?    @map("old_values")
+  newValues         Json?    @map("new_values")
+  ipAddress         String?  @map("ip_address") @db.VarChar(64)
+  userAgent         String?  @map("user_agent") @db.VarChar(500)
+  approvalReference String?  @map("approval_reference") @db.VarChar(120)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  actor User? @relation("AuditActor", fields: [actorUserId], references: [id])
+
+  @@index([actorUserId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

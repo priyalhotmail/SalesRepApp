@@ -1,0 +1,25 @@
+{
+  "name": "sales-distribution-management-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sales, distribution, inventory, delivery, credit and collection management system.",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "dev:backend": "npm run dev -w backend",
+    "dev:frontend": "npm run dev -w frontend",
+    "build": "npm run build -w backend && npm run build -w frontend",
+    "lint": "npm run lint -w backend && npm run lint -w frontend",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,css}\"",
+    "prisma:generate": "npm run prisma:generate -w backend",
+    "prisma:validate": "npm run prisma:validate -w backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "prettier": "^3.4.2"
+  }
+}
+

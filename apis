@@ -1,0 +1,574 @@
+{
+  "info": {
+    "_postman_id": "7d0bbdf9-068a-44e2-8f07-90655d57d4f7",
+    "name": "Sales_App",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "15300951"
+  },
+  "item": [
+    {
+      "name": "POST_Auth",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();\r",
+              "\r",
+              "pm.test(\"Update Token\", function () {\r",
+              "    pm.collectionVariables.set(\"token\", jsonData.accessToken);\r",
+              "});"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"email\": \"admin@sales.local\",\r\n  \"password\": \"Admin@12345\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{url}}/api/auth/login",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_my_User",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/auth/me",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "me"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_User_List",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/users",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "users"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Roles_List",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/roles",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "roles"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Permissions_List",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}api/permissions",
+          "host": [
+            "{{url}}api"
+          ],
+          "path": [
+            "permissions"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_audit_log",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/audit-logs",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "audit-logs"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST_User_Create",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"email\": \"lenali@clenol.com\",\r\n  \"displayName\": \"Lenali\",\r\n  \"password\": \"lenali123\",\r\n  \"telephone\": \"0771234567\",\r\n  \"roleIds\": [6]\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{url}}/api/users",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "users"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Companies",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/companies/current",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "companies",
+            "current"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "PATCH_Companies",
+      "request": {
+        "method": "PATCH",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{url}}/api/companies/current",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "companies",
+            "current"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Offices",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/offices",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "offices"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Factories",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/factories",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "factories"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Warehouses",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/warehouses",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "warehouses"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_SalesReps",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/sales-reps",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "sales-reps"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Sales-targets",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/sales-targets",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "sales-targets"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Commition-rules",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/commissions/rules",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "commissions",
+            "rules"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Warehouse-transfers",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/warehouse-transfers",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "warehouse-transfers"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Customer-visits",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/customer-visits",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "customer-visits"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Customer-nearby",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/customers/nearby",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "customers",
+            "nearby"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Notifications",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/notifications",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "notifications"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Dashboard-Summery",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/dashboard/summary",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "dashboard",
+            "summary"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Dashboard-Sales Trend",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/dashboard/sales-trend",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "dashboard",
+            "sales-trend"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Dashboard-Pending Actions",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/dashboard/pending-actions",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "dashboard",
+            "pending-actions"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Reports-sales-summery",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/reports/sales-summary",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "reports",
+            "sales-summary"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Reports-Collection-Summary",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/reports/collection-summary",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "reports",
+            "collection-summary"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Reports-Inventory-Summary",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/reports/inventory-summary",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "reports",
+            "inventory-summary"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET_Reports-Low-Stock",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{url}}/api/reports/low-stock",
+          "host": [
+            "{{url}}"
+          ],
+          "path": [
+            "api",
+            "reports",
+            "low-stock"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "token",
+      "value": ""
+    }
+  ]
+}

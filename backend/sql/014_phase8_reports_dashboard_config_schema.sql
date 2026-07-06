@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS system_settings (
+  id INT NOT NULL AUTO_INCREMENT,
+  `key` VARCHAR(120) NOT NULL,
+  value JSON NOT NULL,
+  value_type ENUM('STRING', 'NUMBER', 'BOOLEAN', 'JSON') NOT NULL DEFAULT 'STRING',
+  category VARCHAR(80) NOT NULL,
+  description VARCHAR(255) NULL,
+  is_sensitive BOOLEAN NOT NULL DEFAULT FALSE,
+  status ENUM('ACTIVE', 'INACTIVE', 'ARCHIVED', 'DELETED') NOT NULL DEFAULT 'ACTIVE',
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  created_by_id INT NULL,
+  updated_by_id INT NULL,
+  deleted_at DATETIME(3) NULL,
+  deleted_by_id INT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY system_settings_key_key (`key`),
+  KEY system_settings_category_idx (category),
+  KEY system_settings_status_idx (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

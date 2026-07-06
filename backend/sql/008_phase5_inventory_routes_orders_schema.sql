@@ -1,0 +1,182 @@
+CREATE TABLE IF NOT EXISTS inventory_stocks (
+  id INT NOT NULL AUTO_INCREMENT,
+  warehouse_id INT NOT NULL,
+  product_id INT NOT NULL,
+  on_hand_quantity DECIMAL(12, 3) NOT NULL DEFAULT 0,
+  reserved_quantity DECIMAL(12, 3) NOT NULL DEFAULT 0,
+  low_stock_threshold DECIMAL(12, 3) NOT NULL DEFAULT 0,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY inventory_stocks_warehouse_id_product_id_key (warehouse_id, product_id),
+  KEY inventory_stocks_product_id_idx (product_id),
+  CONSTRAINT inventory_stocks_warehouse_id_fkey FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT inventory_stocks_product_id_fkey FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS inventory_movements (
+  id INT NOT NULL AUTO_INCREMENT,
+  warehouse_id INT NOT NULL,
+  product_id INT NOT NULL,
+  movement_type ENUM('STOCK_ADJUSTMENT', 'RESERVATION', 'RESERVATION_RELEASE', 'RESERVATION_CONSUME') NOT NULL,
+  quantity DECIMAL(12, 3) NOT NULL,
+  balance_after DECIMAL(12, 3) NOT NULL,
+  reference_type VARCHAR(80) NULL,
+  reference_id VARCHAR(120) NULL,
+  notes VARCHAR(500) NULL,
+  created_by_id INT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  KEY inventory_movements_warehouse_id_idx (warehouse_id),
+  KEY inventory_movements_product_id_idx (product_id),
+  KEY inventory_movements_movement_type_idx (movement_type),
+  KEY inventory_movements_reference_type_reference_id_idx (reference_type, reference_id),
+  KEY inventory_movements_created_at_idx (created_at),
+  CONSTRAINT inventory_movements_warehouse_id_fkey FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT inventory_movements_product_id_fkey FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS routes (
+  id INT NOT NULL AUTO_INCREMENT,
+  office_id INT NOT NULL,
+  code VARCHAR(40) NOT NULL,
+  name VARCHAR(160) NOT NULL,
+  description VARCHAR(500) NULL,
+  status ENUM('ACTIVE', 'INACTIVE', 'ARCHIVED', 'DELETED') NOT NULL DEFAULT 'ACTIVE',
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  created_by_id INT NULL,
+  updated_by_id INT NULL,
+  deleted_at DATETIME(3) NULL,
+  deleted_by_id INT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY routes_code_key (code),
+  KEY routes_office_id_idx (office_id),
+  KEY routes_status_idx (status),
+  CONSTRAINT routes_office_id_fkey FOREIGN KEY (office_id) REFERENCES offices(id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS route_customers (
+  route_id INT NOT NULL,
+  customer_id INT NOT NULL,
+  assigned_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  assigned_by_id INT NULL,
+  PRIMARY KEY (route_id, customer_id),
+  KEY route_customers_customer_id_idx (customer_id),
+  CONSTRAINT route_customers_route_id_fkey FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT route_customers_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS route_schedules (
+  id INT NOT NULL AUTO_INCREMENT,
+  route_id INT NOT NULL,
+  day_of_week ENUM('MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY') NOT NULL,
+  planned_time VARCHAR(20) NULL,
+  status ENUM('ACTIVE', 'INACTIVE', 'DELETED') NOT NULL DEFAULT 'ACTIVE',
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY route_schedules_route_id_day_of_week_key (route_id, day_of_week),
+  KEY route_schedules_status_idx (status),
+  CONSTRAINT route_schedules_route_id_fkey FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS orders (
+  id INT NOT NULL AUTO_INCREMENT,
+  order_number VARCHAR(40) NOT NULL,
+  customer_id INT NOT NULL,
+  sales_rep_id INT NULL,
+  office_id INT NOT NULL,
+  route_id INT NULL,
+  warehouse_id INT NULL,
+  order_date DATETIME(3) NOT NULL,
+  status ENUM('DRAFT', 'SUBMITTED', 'APPROVED', 'RESERVED', 'LOADING', 'DELIVERED', 'CANCELLED', 'AMENDMENT_PENDING') NOT NULL DEFAULT 'DRAFT',
+  subtotal DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  discount_total DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  total_amount DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  notes VARCHAR(500) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  created_by_id INT NULL,
+  updated_by_id INT NULL,
+  deleted_at DATETIME(3) NULL,
+  deleted_by_id INT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY orders_order_number_key (order_number),
+  KEY orders_customer_id_idx (customer_id),
+  KEY orders_sales_rep_id_idx (sales_rep_id),
+  KEY orders_office_id_idx (office_id),
+  KEY orders_route_id_idx (route_id),
+  KEY orders_warehouse_id_idx (warehouse_id),
+  KEY orders_order_date_idx (order_date),
+  KEY orders_status_idx (status),
+  CONSTRAINT orders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT orders_sales_rep_id_fkey FOREIGN KEY (sales_rep_id) REFERENCES sales_reps(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT orders_office_id_fkey FOREIGN KEY (office_id) REFERENCES offices(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT orders_route_id_fkey FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT orders_warehouse_id_fkey FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS order_items (
+  id INT NOT NULL AUTO_INCREMENT,
+  order_id INT NOT NULL,
+  product_id INT NOT NULL,
+  packaging_option_id INT NULL,
+  quantity DECIMAL(12, 3) NOT NULL,
+  free_quantity DECIMAL(12, 3) NOT NULL DEFAULT 0,
+  unit_price DECIMAL(12, 2) NOT NULL,
+  discount_amount DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  line_total DECIMAL(12, 2) NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  KEY order_items_order_id_idx (order_id),
+  KEY order_items_product_id_idx (product_id),
+  KEY order_items_packaging_option_id_idx (packaging_option_id),
+  CONSTRAINT order_items_order_id_fkey FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT order_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT order_items_packaging_option_id_fkey FOREIGN KEY (packaging_option_id) REFERENCES product_packaging_options(id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS stock_reservations (
+  id INT NOT NULL AUTO_INCREMENT,
+  warehouse_id INT NOT NULL,
+  product_id INT NOT NULL,
+  order_id INT NULL,
+  quantity DECIMAL(12, 3) NOT NULL,
+  status ENUM('ACTIVE', 'RELEASED', 'CONSUMED', 'CANCELLED') NOT NULL DEFAULT 'ACTIVE',
+  notes VARCHAR(500) NULL,
+  created_by_id INT NULL,
+  released_by_id INT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  released_at DATETIME(3) NULL,
+  PRIMARY KEY (id),
+  KEY stock_reservations_warehouse_id_idx (warehouse_id),
+  KEY stock_reservations_product_id_idx (product_id),
+  KEY stock_reservations_order_id_idx (order_id),
+  KEY stock_reservations_status_idx (status),
+  CONSTRAINT stock_reservations_warehouse_id_fkey FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT stock_reservations_product_id_fkey FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT stock_reservations_order_id_fkey FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS order_amendment_requests (
+  id INT NOT NULL AUTO_INCREMENT,
+  order_id INT NOT NULL,
+  requested_by_id INT NOT NULL,
+  reviewed_by_id INT NULL,
+  status ENUM('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED') NOT NULL DEFAULT 'PENDING',
+  requested_changes JSON NOT NULL,
+  reason VARCHAR(500) NULL,
+  review_note VARCHAR(500) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  reviewed_at DATETIME(3) NULL,
+  PRIMARY KEY (id),
+  KEY order_amendment_requests_order_id_idx (order_id),
+  KEY order_amendment_requests_requested_by_id_idx (requested_by_id),
+  KEY order_amendment_requests_reviewed_by_id_idx (reviewed_by_id),
+  KEY order_amendment_requests_status_idx (status),
+  CONSTRAINT order_amendment_requests_order_id_fkey FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT order_amendment_requests_requested_by_id_fkey FOREIGN KEY (requested_by_id) REFERENCES users(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT order_amendment_requests_reviewed_by_id_fkey FOREIGN KEY (reviewed_by_id) REFERENCES users(id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
