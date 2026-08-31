@@ -36,8 +36,11 @@ export class RoutesController {
 
   @Get("routes")
   @Permissions("routes.read")
-  listRoutes(@Query() query: RouteQueryDto) {
-    return this.service.listRoutes(query);
+  listRoutes(
+    @Query() query: RouteQueryDto,
+    @CurrentUser() actor: AuthenticatedUser
+  ) {
+    return this.service.listRoutes(query, actor);
   }
 
   @Post("routes")
@@ -52,8 +55,11 @@ export class RoutesController {
 
   @Get("routes/:id")
   @Permissions("routes.read")
-  findRouteById(@Param("id", ParseIntPipe) id: number) {
-    return this.service.findRouteById(id);
+  findRouteById(
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentUser() actor: AuthenticatedUser
+  ) {
+    return this.service.findRouteById(id, actor);
   }
 
   @Patch("routes/:id")

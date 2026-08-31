@@ -52,7 +52,8 @@ export class SalesRepsService {
               id: true,
               status: true
             }
-          }
+          },
+          warehouse: true
         },
         orderBy: { name: "asc" },
         skip,
@@ -68,6 +69,7 @@ export class SalesRepsService {
   async create(dto: CreateSalesRepDto, context: RequestContext) {
     await this.ensureOffice(dto.officeId);
     await this.ensureUser(dto.userId);
+    await this.ensureWarehouse(dto.warehouseId, dto.officeId);
     const code = await this.resolveUniqueCode(dto.code);
 
     const salesRep = await this.prisma.salesRep.create({
@@ -80,7 +82,8 @@ export class SalesRepsService {
         nic: dto.nic.trim(),
         officeId: dto.officeId,
         telephone: dto.telephone,
-        userId: dto.userId
+        userId: dto.userId,
+        warehouseId: dto.warehouseId
       }
     });
 
@@ -99,17 +102,18 @@ export class SalesRepsService {
 
   async findById(id: number) {
     const salesRep = await this.prisma.salesRep.findFirst({
-      include: {
-        office: true,
-        user: {
+        include: {
+          office: true,
+          user: {
           select: {
             displayName: true,
             email: true,
             id: true,
-            status: true
-          }
-        }
-      },
+              status: true
+            }
+          },
+          warehouse: true
+        },
       where: { id }
     });
 
@@ -126,6 +130,7 @@ export class SalesRepsService {
       await this.ensureOffice(dto.officeId);
     }
     await this.ensureUser(dto.userId);
+    await this.ensureWarehouse(dto.warehouseId, dto.officeId ?? salesRep.officeId);
 
     const updatedSalesRep = await this.prisma.salesRep.update({
       data: {
@@ -137,7 +142,8 @@ export class SalesRepsService {
         status: dto.status,
         telephone: dto.telephone,
         updatedById: context.actor.id,
-        userId: dto.userId
+        userId: dto.userId,
+        warehouseId: dto.warehouseId
       },
       where: { id }
     });
@@ -210,6 +216,24 @@ export class SalesRepsService {
 
     if (!user) {
       throw new BadRequestException("Linked user is invalid");
+    }
+  }
+
+  private async ensureWarehouse(warehouseId?: number, officeId?: number) {
+    if (!warehouseId) {
+      return;
+    }
+
+    const warehouse = await this.prisma.warehouse.findFirst({
+      where: { id: warehouseId, status: { not: "DELETED" } }
+    });
+
+    if (!warehouse) {
+      throw new BadRequestException("Primary warehouse is invalid");
+    }
+
+    if (warehouse.officeId && officeId && warehouse.officeId !== officeId) {
+      throw new BadRequestException("Primary warehouse must belong to the sales rep office");
     }
   }
 

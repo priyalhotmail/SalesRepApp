@@ -44,6 +44,12 @@ export class SalesInvoicesController {
     return this.service.createFromOrder(dto, buildRequestContext(actor, request));
   }
 
+  @Get("eligible-orders")
+  @Permissions("sales_invoices.create")
+  listEligibleOrders(@CurrentUser() actor: AuthenticatedUser) {
+    return this.service.listEligibleOrders(actor);
+  }
+
   @Get(":id")
   @Permissions("sales_invoices.read")
   findInvoiceById(@Param("id", ParseIntPipe) id: number) {

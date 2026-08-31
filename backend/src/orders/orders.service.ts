@@ -6,8 +6,12 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
+import { DiscountsService } from "../discounts/discounts.service";
+import { PriceListsService } from "../price-lists/price-lists.service";
+import { AuthenticatedUser } from "../common/types/authenticated-user.type";
 import { RequestContext } from "../common/types/request-context.type";
 import { toAuditJson } from "../common/utils/audit-json.util";
+import { isSalesRepScopedActor } from "../common/utils/user-scope.util";
 import { getPagination, toPaginatedResult } from "../common/utils/pagination.util";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -16,6 +20,7 @@ import {
   OrderAmendmentRequestQueryDto,
   OrderLineDto,
   OrderQueryDto,
+  QuoteOrderItemsDto,
   ReviewOrderAmendmentRequestDto,
   UpdateOrderDto
 } from "./dto/order.dto";
@@ -60,17 +65,22 @@ type AmendmentChanges = {
 export class OrdersService {
   constructor(
     private readonly auditService: AuditService,
+    private readonly discountsService: DiscountsService,
+    private readonly priceListsService: PriceListsService,
     private readonly prisma: PrismaService
   ) {}
 
-  async listOrders(query: OrderQueryDto) {
+  async listOrders(query: OrderQueryDto, actor?: AuthenticatedUser) {
     const { limit, page, skip, take } = getPagination(query);
+    const salesRepContext = actor && isSalesRepScopedActor(actor)
+      ? await this.getSalesRepContext(actor.id)
+      : undefined;
     const where: Prisma.OrderWhereInput = {
       customerId: query.customerId,
       deletedAt: null,
       officeId: query.officeId,
       routeId: query.routeId,
-      salesRepId: query.salesRepId,
+      salesRepId: salesRepContext?.id ?? query.salesRepId,
       status: query.status,
       warehouseId: query.warehouseId
     };
@@ -104,10 +114,17 @@ export class OrdersService {
     return toPaginatedResult(data, total, page, limit);
   }
 
-  async findOrderById(id: number) {
+  async findOrderById(id: number, actor?: AuthenticatedUser) {
+    const salesRepContext = actor && isSalesRepScopedActor(actor)
+      ? await this.getSalesRepContext(actor.id)
+      : undefined;
     const order = await this.prisma.order.findFirst({
       include: orderInclude,
-      where: { deletedAt: null, id }
+      where: {
+        deletedAt: null,
+        id,
+        salesRepId: salesRepContext?.id
+      }
     });
 
     if (!order) {
@@ -121,13 +138,17 @@ export class OrdersService {
     const orderNumber =
       dto.orderNumber?.trim().toUpperCase() ?? (await this.generateOrderNumber());
     await this.ensureUniqueOrderNumber(orderNumber);
-    await this.validateOrderReferences(dto);
-    const preparedOrder = await this.prepareOrder(dto.items);
+    const orderReferences = await this.resolveOrderReferences(dto, context);
+    const preparedOrder = await this.prepareOrder(
+      dto.items,
+      orderReferences.customerId,
+      orderReferences.officeId
+    );
 
     const order = await this.prisma.order.create({
       data: {
         createdById: context.actor.id,
-        customerId: dto.customerId,
+        customerId: orderReferences.customerId,
         discountTotal: preparedOrder.discountTotal,
         items: {
           create: preparedOrder.items.map((item) => ({
@@ -141,15 +162,15 @@ export class OrdersService {
           }))
         },
         notes: dto.notes,
-        officeId: dto.officeId,
+        officeId: orderReferences.officeId,
         orderDate: dto.orderDate ? new Date(dto.orderDate) : new Date(),
         orderNumber,
-        routeId: dto.routeId,
-        salesRepId: dto.salesRepId,
+        routeId: orderReferences.routeId,
+        salesRepId: orderReferences.salesRepId,
         status: dto.status ?? "SUBMITTED",
         subtotal: preparedOrder.subtotal,
         totalAmount: preparedOrder.totalAmount,
-        warehouseId: dto.warehouseId
+        warehouseId: orderReferences.warehouseId
       },
       include: orderInclude
     });
@@ -167,17 +188,39 @@ export class OrdersService {
     return order;
   }
 
+  async listCatalogueProducts() {
+    return this.prisma.product.findMany({
+      include: { packagingOptions: true, productGroup: true },
+      orderBy: { name: "asc" },
+      where: { status: "ACTIVE" }
+    });
+  }
+
+  async quoteItems(dto: QuoteOrderItemsDto) {
+    const customer = await this.ensureCustomer(dto.customerId);
+    const prepared = await this.prepareOrder(dto.items, customer.id, customer.officeId);
+    return {
+      discountTotal: prepared.discountTotal,
+      items: prepared.items,
+      subtotal: prepared.subtotal,
+      totalAmount: prepared.totalAmount
+    };
+  }
+
   async updateOrder(
     id: number,
     dto: UpdateOrderDto,
     context: RequestContext
   ) {
-    const order = await this.findOrderById(id);
+    const order = await this.findOrderById(id, context.actor);
     this.ensureOrderEditable(order);
     await this.ensureNoActiveReservations(id);
+    if (isSalesRepScopedActor(context.actor) && (dto.routeId || dto.warehouseId)) {
+      throw new BadRequestException("Sales reps cannot change order route or warehouse");
+    }
     await this.validateOrderPatch(order, dto);
     const preparedOrder = dto.items
-      ? await this.prepareOrder(dto.items)
+      ? await this.prepareOrder(dto.items, order.customerId, order.officeId)
       : undefined;
 
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
@@ -229,9 +272,9 @@ export class OrdersService {
   }
 
   async approveOrder(id: number, context: RequestContext) {
-    const order = await this.findOrderById(id);
-    if (!["DRAFT", "SUBMITTED"].includes(order.status)) {
-      throw new BadRequestException("Only draft or submitted orders can be approved");
+    const order = await this.findOrderById(id, context.actor);
+    if (order.status !== "SUBMITTED") {
+      throw new BadRequestException("Only submitted orders can be approved");
     }
     await this.ensureCreditAllowed(order);
 
@@ -256,7 +299,7 @@ export class OrdersService {
   }
 
   async reserveOrderStock(id: number, context: RequestContext) {
-    const order = await this.findOrderById(id);
+    const order = await this.findOrderById(id, context.actor);
     if (order.status !== "APPROVED") {
       throw new BadRequestException("Only approved orders can reserve stock");
     }
@@ -300,7 +343,7 @@ export class OrdersService {
   }
 
   async cancelOrder(id: number, context: RequestContext) {
-    const order = await this.findOrderById(id);
+    const order = await this.findOrderById(id, context.actor);
     if (["CANCELLED", "DELIVERED"].includes(order.status)) {
       throw new BadRequestException("Order cannot be cancelled");
     }
@@ -345,7 +388,7 @@ export class OrdersService {
     dto: CreateOrderAmendmentRequestDto,
     context: RequestContext
   ) {
-    await this.findOrderById(orderId);
+    await this.findOrderById(orderId, context.actor);
     const pendingRequest = await this.prisma.orderAmendmentRequest.findFirst({
       where: { orderId, status: "PENDING" }
     });
@@ -403,7 +446,7 @@ export class OrdersService {
     context: RequestContext
   ) {
     const request = await this.findPendingAmendmentRequest(id);
-    const order = await this.findOrderById(request.orderId);
+    const order = await this.findOrderById(request.orderId, context.actor);
     if (["CANCELLED", "DELIVERED"].includes(order.status)) {
       throw new BadRequestException("Finalized orders cannot be amended");
     }
@@ -414,7 +457,7 @@ export class OrdersService {
     }
     await this.validateOrderPatch(order, changes);
     const preparedOrder = changes.items
-      ? await this.prepareOrder(changes.items)
+      ? await this.prepareOrder(changes.items, order.customerId, order.officeId)
       : undefined;
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -510,22 +553,65 @@ export class OrdersService {
     return reviewedRequest;
   }
 
-  private async validateOrderReferences(dto: CreateOrderDto) {
+  private async resolveOrderReferences(dto: CreateOrderDto, context: RequestContext) {
     const customer = await this.ensureCustomer(dto.customerId);
-    await this.ensureOffice(dto.officeId);
-    if (customer.officeId !== dto.officeId) {
-      throw new BadRequestException("Customer does not belong to the selected office");
+    const primaryRoute = await this.getPrimaryActiveCustomerRoute(customer.id);
+
+    if (isSalesRepScopedActor(context.actor)) {
+      const salesRep = await this.getSalesRepContext(context.actor.id);
+      if (!salesRep.warehouseId) {
+        throw new BadRequestException("Sales rep does not have a primary warehouse");
+      }
+      if (customer.officeId !== salesRep.officeId) {
+        throw new BadRequestException("Customer does not belong to the sales rep office");
+      }
+      if (customer.salesRepId && customer.salesRepId !== salesRep.id) {
+        throw new BadRequestException("Customer is assigned to another sales rep");
+      }
+      if (!primaryRoute) {
+        throw new BadRequestException("Customer does not have a primary active route");
+      }
+      if (primaryRoute.route.officeId !== salesRep.officeId) {
+        throw new BadRequestException("Customer primary route is not in the sales rep office");
+      }
+
+      return {
+        customerId: customer.id,
+        officeId: salesRep.officeId,
+        routeId: primaryRoute.routeId,
+        salesRepId: salesRep.id,
+        warehouseId: salesRep.warehouseId
+      };
     }
 
-    if (dto.salesRepId) {
-      await this.ensureSalesRep(dto.salesRepId, dto.officeId);
+    if (!dto.officeId) {
+      throw new BadRequestException("Office is required");
     }
-    if (dto.routeId) {
-      await this.ensureRoute(dto.routeId, dto.officeId);
+
+    const officeId = dto.officeId;
+    const routeId = primaryRoute?.routeId ?? dto.routeId;
+
+    await this.ensureOffice(officeId);
+    if (customer.officeId !== officeId) {
+      throw new BadRequestException("Customer does not belong to the selected office");
+    }
+    if (dto.salesRepId) {
+      await this.ensureSalesRep(dto.salesRepId, officeId);
+    }
+    if (routeId) {
+      await this.ensureRoute(routeId, officeId);
     }
     if (dto.warehouseId) {
       await this.ensureWarehouse(dto.warehouseId);
     }
+
+    return {
+      customerId: customer.id,
+      officeId,
+      routeId,
+      salesRepId: dto.salesRepId,
+      warehouseId: dto.warehouseId
+    };
   }
 
   private async validateOrderPatch(
@@ -540,18 +626,42 @@ export class OrdersService {
     }
   }
 
-  private async prepareOrder(items: OrderLineDto[]): Promise<PreparedOrder> {
+  private async prepareOrder(
+    items: OrderLineDto[],
+    customerId: number,
+    officeId: number
+  ): Promise<PreparedOrder> {
+    this.ensureNoDuplicateOrderItems(items);
     const preparedItems: PreparedOrderLine[] = [];
+    const pricedLines: { item: OrderLineDto; unitPrice: number }[] = [];
 
     for (const item of items) {
-      const product = await this.ensureProduct(item.productId);
+      await this.ensureProduct(item.productId);
       if (item.packagingOptionId) {
         await this.ensurePackagingOption(item.packagingOptionId, item.productId);
       }
 
-      const unitPrice = item.unitPrice ?? Number(product.price);
-      const discountAmount = item.discountAmount ?? 0;
-      const freeQuantity = item.freeQuantity ?? 0;
+      const price = await this.priceListsService.resolvePrice({
+        customerId,
+        officeId,
+        productId: item.productId
+      });
+      pricedLines.push({ item, unitPrice: price.unitPrice });
+    }
+
+    const discount = await this.discountsService.calculate({
+      customerId,
+      lines: pricedLines.map(({ item, unitPrice }) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice
+      }))
+    });
+
+    for (const { item, unitPrice } of pricedLines) {
+      const discountLine = discount.lines.find((line) => line.productId === item.productId);
+      const discountAmount = Number((discountLine?.totalDiscount ?? 0).toFixed(2));
+      const freeQuantity = discountLine?.freeQuantity ?? 0;
       const grossAmount = item.quantity * unitPrice;
       const lineTotal = Number(Math.max(grossAmount - discountAmount, 0).toFixed(2));
 
@@ -584,6 +694,17 @@ export class OrdersService {
       subtotal,
       totalAmount
     };
+  }
+
+  private ensureNoDuplicateOrderItems(items: OrderLineDto[]) {
+    const keys = new Set<string>();
+    for (const item of items) {
+      const key = String(item.productId);
+      if (keys.has(key)) {
+        throw new BadRequestException("Duplicate order items are not allowed");
+      }
+      keys.add(key);
+    }
   }
 
   private ensureOrderEditable(order: OrderWithDetails) {
@@ -823,6 +944,39 @@ export class OrdersService {
       throw new BadRequestException("Customer is invalid");
     }
     return customer;
+  }
+
+  private async getPrimaryActiveCustomerRoute(customerId: number) {
+    return this.prisma.routeCustomer.findFirst({
+      include: { route: true },
+      orderBy: { assignedAt: "desc" },
+      where: {
+        customerId,
+        isPrimary: true,
+        route: { status: { not: "DELETED" } },
+        status: "ACTIVE"
+      }
+    });
+  }
+
+  private async getSalesRepContext(userId: number) {
+    const salesRep = await this.prisma.salesRep.findFirst({
+      include: { warehouse: true },
+      where: {
+        status: "ACTIVE",
+        userId
+      }
+    });
+
+    if (!salesRep) {
+      throw new BadRequestException("Authenticated user is not linked to an active sales rep");
+    }
+
+    if (salesRep.warehouseId && salesRep.warehouse?.officeId && salesRep.warehouse.officeId !== salesRep.officeId) {
+      throw new BadRequestException("Sales rep primary warehouse is not in the sales rep office");
+    }
+
+    return salesRep;
   }
 
   private async ensureOffice(officeId: number) {

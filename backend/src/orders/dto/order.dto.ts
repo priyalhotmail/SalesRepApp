@@ -119,9 +119,10 @@ export class CreateOrderDto {
   @IsInt()
   salesRepId?: number;
 
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
-  officeId!: number;
+  officeId?: number;
 
   @IsOptional()
   @Type(() => Number)
@@ -145,6 +146,18 @@ export class CreateOrderDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => OrderLineDto)
+  items!: OrderLineDto[];
+}
+
+export class QuoteOrderItemsDto {
+  @Type(() => Number)
+  @IsInt()
+  customerId!: number;
 
   @IsArray()
   @ArrayMinSize(1)

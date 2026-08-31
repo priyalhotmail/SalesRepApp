@@ -6,7 +6,7 @@ import { PriceListsService } from "./price-lists.service";
 @Module({
   controllers: [PriceListsController],
   imports: [AuditModule],
-  providers: [PriceListsService]
+  providers: [PriceListsService],
+  exports: [PriceListsService]
 })
 export class PriceListsModule {}
-

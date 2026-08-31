@@ -16,12 +16,19 @@ const recordStatuses = ["ACTIVE", "INACTIVE", "ARCHIVED"] as const;
 
 export class UpdateCustomerDto {
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   officeId?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   salesRepId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  routeId?: number;
 
   @IsOptional()
   @IsString()

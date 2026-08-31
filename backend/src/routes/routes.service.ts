@@ -12,6 +12,8 @@ import {
   nextSequentialCode,
   normalizeCode
 } from "../common/utils/code-generator.util";
+import { AuthenticatedUser } from "../common/types/authenticated-user.type";
+import { isSalesRepScopedActor } from "../common/utils/user-scope.util";
 import { getPagination, toPaginatedResult } from "../common/utils/pagination.util";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -30,10 +32,13 @@ export class RoutesService {
     private readonly prisma: PrismaService
   ) {}
 
-  async listRoutes(query: RouteQueryDto) {
+  async listRoutes(query: RouteQueryDto, actor?: AuthenticatedUser) {
     const { limit, page, skip, take } = getPagination(query);
+    const salesRepContext = actor && isSalesRepScopedActor(actor)
+      ? await this.getSalesRepContext(actor.id)
+      : undefined;
     const where: Prisma.RouteWhereInput = {
-      officeId: query.officeId,
+      officeId: salesRepContext?.officeId ?? query.officeId,
       status: query.status ?? { not: "DELETED" }
     };
 
@@ -49,7 +54,10 @@ export class RoutesService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.route.findMany({
         include: {
-          customers: { include: { customer: true } },
+          customers: {
+            include: { customer: true },
+            where: { status: "ACTIVE" }
+          },
           office: true,
           schedules: true
         },
@@ -64,14 +72,24 @@ export class RoutesService {
     return toPaginatedResult(data, total, page, limit);
   }
 
-  async findRouteById(id: number) {
+  async findRouteById(id: number, actor?: AuthenticatedUser) {
+    const salesRepContext = actor && isSalesRepScopedActor(actor)
+      ? await this.getSalesRepContext(actor.id)
+      : undefined;
     const route = await this.prisma.route.findFirst({
       include: {
-        customers: { include: { customer: true } },
+        customers: {
+          include: { customer: true },
+          where: { status: "ACTIVE" }
+        },
         office: true,
         schedules: true
       },
-      where: { id, status: { not: "DELETED" } }
+      where: {
+        id,
+        officeId: salesRepContext?.officeId,
+        status: { not: "DELETED" }
+      }
     });
 
     if (!route) {
@@ -180,20 +198,40 @@ export class RoutesService {
     await this.ensureCustomers(dto.customerIds);
 
     const route = await this.prisma.$transaction(async (tx) => {
-      await tx.routeCustomer.deleteMany({ where: { routeId } });
-      if (dto.customerIds.length > 0) {
-        await tx.routeCustomer.createMany({
-          data: dto.customerIds.map((customerId) => ({
+      await tx.routeCustomer.updateMany({
+        data: { status: "INACTIVE" },
+        where: { routeId }
+      });
+      for (const customerId of dto.customerIds) {
+        await tx.routeCustomer.upsert({
+          create: {
             assignedById: context.actor.id,
             customerId,
             routeId
-          })),
-          skipDuplicates: true
+          },
+          update: {
+            assignedById: context.actor.id,
+            assignedAt: new Date(),
+            isPrimary: false,
+            status: "ACTIVE"
+          },
+          where: {
+            routeId_customerId: {
+              customerId,
+              routeId
+            }
+          }
         });
       }
 
       return tx.route.findUnique({
-        include: { customers: { include: { customer: true } }, schedules: true },
+        include: {
+          customers: {
+            include: { customer: true },
+            where: { status: "ACTIVE" }
+          },
+          schedules: true
+        },
         where: { id: routeId }
       });
     });
@@ -330,6 +368,21 @@ export class RoutesService {
     const generatedCode = nextSequentialCode("RTE", lastCode?.code);
     await this.ensureUniqueRouteCode(generatedCode);
     return generatedCode;
+  }
+
+  private async getSalesRepContext(userId: number) {
+    const salesRep = await this.prisma.salesRep.findFirst({
+      where: {
+        status: "ACTIVE",
+        userId
+      }
+    });
+
+    if (!salesRep) {
+      throw new BadRequestException("Authenticated user is not linked to an active sales rep");
+    }
+
+    return salesRep;
   }
 
   private async ensureUniqueRouteCode(code: string) {

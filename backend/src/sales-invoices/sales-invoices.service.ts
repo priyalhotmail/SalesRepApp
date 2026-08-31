@@ -6,8 +6,10 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
+import { AuthenticatedUser } from "../common/types/authenticated-user.type";
 import { RequestContext } from "../common/types/request-context.type";
 import { toAuditJson } from "../common/utils/audit-json.util";
+import { isSalesRepScopedActor } from "../common/utils/user-scope.util";
 import { getPagination, toPaginatedResult } from "../common/utils/pagination.util";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -76,13 +78,33 @@ export class SalesInvoicesService {
     return invoice;
   }
 
+  async listEligibleOrders(actor: AuthenticatedUser) {
+    const salesRepId = isSalesRepScopedActor(actor)
+      ? await this.getSalesRepId(actor.id)
+      : undefined;
+
+    return this.prisma.order.findMany({
+      include: { customer: true },
+      orderBy: { orderDate: "desc" },
+      where: {
+        deletedAt: null,
+        salesInvoice: null,
+        salesRepId,
+        status: { in: ["APPROVED", "RESERVED", "LOADING", "DELIVERED"] }
+      }
+    });
+  }
+
   async createFromOrder(
     dto: CreateInvoiceFromOrderDto,
     context: RequestContext
   ) {
+    const salesRepId = isSalesRepScopedActor(context.actor)
+      ? await this.getSalesRepId(context.actor.id)
+      : undefined;
     const order = await this.prisma.order.findFirst({
       include: { customer: true, items: true },
-      where: { deletedAt: null, id: dto.orderId }
+      where: { deletedAt: null, id: dto.orderId, salesRepId }
     });
 
     if (!order) {
@@ -93,7 +115,7 @@ export class SalesInvoicesService {
     }
 
     const existingInvoice = await this.prisma.salesInvoice.findFirst({
-      where: { orderId: order.id, status: { not: "CANCELLED" } }
+      where: { orderId: order.id }
     });
     if (existingInvoice) {
       throw new ConflictException("Order already has an active invoice");
@@ -187,6 +209,19 @@ export class SalesInvoicesService {
     const dueDate = new Date(invoiceDate);
     dueDate.setDate(dueDate.getDate() + termsDays);
     return dueDate.toISOString();
+  }
+
+  private async getSalesRepId(userId: number) {
+    const salesRep = await this.prisma.salesRep.findFirst({
+      select: { id: true },
+      where: { status: "ACTIVE", userId }
+    });
+
+    if (!salesRep) {
+      throw new BadRequestException("Authenticated user is not linked to an active sales rep");
+    }
+
+    return salesRep.id;
   }
 
   private async generateInvoiceNumber() {

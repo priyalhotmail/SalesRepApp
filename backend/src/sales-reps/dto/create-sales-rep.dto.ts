@@ -1,3 +1,4 @@
+import { Type } from "class-transformer";
 import { IsEmail, IsInt, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 export class CreateSalesRepDto {
@@ -5,8 +6,14 @@ export class CreateSalesRepDto {
   officeId!: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   userId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  warehouseId?: number;
 
   @IsOptional()
   @IsString()

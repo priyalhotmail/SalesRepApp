@@ -12,6 +12,7 @@ import {
   nextSequentialCode,
   normalizeCode
 } from "../common/utils/code-generator.util";
+import { isSalesRepScopedActor } from "../common/utils/user-scope.util";
 import { getPagination, toPaginatedResult } from "../common/utils/pagination.util";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -29,6 +30,7 @@ import { UpdateCustomerDto } from "./dto/update-customer.dto";
 const allowedChangeFields = new Set([
   "officeId",
   "salesRepId",
+  "routeId",
   "displayName",
   "registrationNumber",
   "vatRegistrationNumber",
@@ -50,12 +52,15 @@ export class CustomersService {
     private readonly prisma: PrismaService
   ) {}
 
-  async list(query: CustomerQueryDto) {
+  async list(query: CustomerQueryDto, actor?: RequestContext["actor"]) {
     const { limit, page, skip, take } = getPagination(query);
+    const salesRepContext = actor && isSalesRepScopedActor(actor)
+      ? await this.getSalesRepContext(actor.id)
+      : undefined;
     const where: Prisma.CustomerWhereInput = {
       customerType: query.customerType,
-      officeId: query.officeId,
-      salesRepId: query.salesRepId,
+      officeId: salesRepContext?.officeId ?? query.officeId,
+      salesRepId: salesRepContext?.id ?? query.salesRepId,
       status: query.status ?? { not: "DELETED" }
     };
 
@@ -74,6 +79,10 @@ export class CustomersService {
       this.prisma.customer.findMany({
         include: {
           office: true,
+          routeAssignments: {
+            include: { route: true },
+            where: { isPrimary: true, status: "ACTIVE" }
+          },
           salesRep: true
         },
         orderBy: { displayName: "asc" },
@@ -88,35 +97,58 @@ export class CustomersService {
   }
 
   async create(dto: CreateCustomerDto, context: RequestContext) {
+    const salesRepContext = isSalesRepScopedActor(context.actor)
+      ? await this.getSalesRepContext(context.actor.id)
+      : undefined;
+    const officeId = salesRepContext?.officeId ?? dto.officeId;
+    const salesRepId = salesRepContext?.id ?? dto.salesRepId;
     await this.validateCustomerShape(dto.customerType, dto);
-    await this.ensureOffice(dto.officeId);
-    await this.ensureSalesRep(dto.salesRepId, dto.officeId);
+    await this.ensureOffice(officeId);
+    await this.ensureSalesRep(salesRepId, officeId);
+    if (dto.routeId) {
+      await this.ensureRouteAllowed(dto.routeId, officeId);
+    } else if (salesRepContext) {
+      throw new BadRequestException("Route is required");
+    }
     const code = await this.resolveUniqueCode(dto.code);
     this.validateGeoPair(dto.latitude, dto.longitude);
 
-    const customer = await this.prisma.customer.create({
-      data: {
-        address: dto.address,
-        code,
-        contactPerson: dto.contactPerson,
-        createdById: context.actor.id,
-        customerType: dto.customerType,
-        displayName: dto.displayName.trim(),
-        email: dto.email,
-        geoAccuracyMeters: dto.geoAccuracyMeters,
-        geoCapturedAt:
-          dto.latitude !== undefined && dto.longitude !== undefined
-            ? new Date()
-            : undefined,
-        latitude: dto.latitude,
-        longitude: dto.longitude,
-        nic: dto.nic,
-        officeId: dto.officeId,
-        registrationNumber: dto.registrationNumber,
-        salesRepId: dto.salesRepId,
-        telephone: dto.telephone,
-        vatRegistrationNumber: dto.vatRegistrationNumber
+    const customer = await this.prisma.$transaction(async (tx) => {
+      const createdCustomer = await tx.customer.create({
+        data: {
+          address: dto.address,
+          code,
+          contactPerson: dto.contactPerson,
+          createdById: context.actor.id,
+          customerType: dto.customerType,
+          displayName: dto.displayName.trim(),
+          email: dto.email,
+          geoAccuracyMeters: dto.geoAccuracyMeters,
+          geoCapturedAt:
+            dto.latitude !== undefined && dto.longitude !== undefined
+              ? new Date()
+              : undefined,
+          latitude: dto.latitude,
+          longitude: dto.longitude,
+          nic: dto.nic,
+          officeId,
+          registrationNumber: dto.registrationNumber,
+          salesRepId,
+          telephone: dto.telephone,
+          vatRegistrationNumber: dto.vatRegistrationNumber
+        }
+      });
+
+      if (dto.routeId) {
+        await this.setPrimaryRouteInTransaction(
+          tx,
+          createdCustomer.id,
+          dto.routeId,
+          context.actor.id
+        );
       }
+
+      return createdCustomer;
     });
 
     await this.prisma.customerChangeHistory.create({
@@ -140,10 +172,47 @@ export class CustomersService {
     return customer;
   }
 
-  async findById(id: number) {
+  async getNewCustomerContext(actor: RequestContext["actor"]) {
+    if (!isSalesRepScopedActor(actor)) {
+      return { salesRep: null };
+    }
+
+    const salesRep = await this.prisma.salesRep.findFirst({
+      include: {
+        office: true,
+        user: { select: { displayName: true } }
+      },
+      where: {
+        status: "ACTIVE",
+        userId: actor.id
+      }
+    });
+
+    if (!salesRep) {
+      throw new BadRequestException("Authenticated user is not linked to an active sales rep");
+    }
+
+    return {
+      salesRep: {
+        id: salesRep.id,
+        name: salesRep.user?.displayName ?? salesRep.name,
+        office: {
+          id: salesRep.office.id,
+          name: salesRep.office.name
+        },
+        officeId: salesRep.officeId
+      }
+    };
+  }
+
+  async findById(id: number, actor?: RequestContext["actor"]) {
     const customer = await this.prisma.customer.findFirst({
       include: {
         office: true,
+        routeAssignments: {
+          include: { route: true },
+          where: { isPrimary: true, status: "ACTIVE" }
+        },
         salesRep: true
       },
       where: { id }
@@ -152,24 +221,56 @@ export class CustomersService {
     if (!customer) {
       throw new NotFoundException("Customer not found");
     }
+    if (actor && isSalesRepScopedActor(actor)) {
+      const salesRepContext = await this.getSalesRepContext(actor.id);
+      if (customer.salesRepId !== salesRepContext.id) {
+        throw new NotFoundException("Customer not found");
+      }
+    }
 
     return customer;
   }
 
   async update(id: number, dto: UpdateCustomerDto, context: RequestContext) {
     const customer = await this.findActiveCustomer(id);
+    const salesRepContext = isSalesRepScopedActor(context.actor)
+      ? await this.getSalesRepContext(context.actor.id)
+      : undefined;
+    if (salesRepContext && customer.salesRepId !== salesRepContext.id) {
+      throw new NotFoundException("Customer not found");
+    }
     const merged = { ...customer, ...dto };
     await this.validateCustomerShape(customer.customerType, merged);
+    const officeId = salesRepContext?.officeId ?? dto.officeId ?? customer.officeId;
+    const salesRepId = salesRepContext?.id ?? dto.salesRepId ?? customer.salesRepId ?? undefined;
     await this.ensureOffice(dto.officeId);
-    await this.ensureSalesRep(dto.salesRepId, dto.officeId ?? customer.officeId);
+    await this.ensureSalesRep(salesRepId, officeId);
+    if (dto.routeId) {
+      await this.ensureRouteAllowed(dto.routeId, officeId);
+    }
     this.validateGeoPair(
       dto.latitude ?? Number(customer.latitude ?? undefined),
       dto.longitude ?? Number(customer.longitude ?? undefined)
     );
 
-    const updatedCustomer = await this.prisma.customer.update({
-      data: this.toCustomerUpdateData({ ...dto }, context.actor.id),
-      where: { id }
+    const updatedCustomer = await this.prisma.$transaction(async (tx) => {
+      const changedCustomer = await tx.customer.update({
+        data: this.toCustomerUpdateData({
+          ...dto,
+          officeId: salesRepContext ? salesRepContext.officeId : dto.officeId,
+          salesRepId: salesRepContext ? salesRepContext.id : dto.salesRepId
+        }, context.actor.id),
+        where: { id }
+      });
+      if (dto.routeId) {
+        await this.setPrimaryRouteInTransaction(
+          tx,
+          id,
+          dto.routeId,
+          context.actor.id
+        );
+      }
+      return changedCustomer;
     });
 
     await this.prisma.customerChangeHistory.create({
@@ -191,6 +292,18 @@ export class CustomersService {
       oldValues: toAuditJson(customer),
       userAgent: context.userAgent
     });
+
+    if (dto.routeId) {
+      await this.auditService.record({
+        action: "CUSTOMER_PRIMARY_ROUTE_UPDATED",
+        actorUserId: context.actor.id,
+        entityId: id,
+        entityType: "customer",
+        ipAddress: context.ipAddress,
+        newValues: toAuditJson({ routeId: dto.routeId }),
+        userAgent: context.userAgent
+      });
+    }
 
     return updatedCustomer;
   }
@@ -467,6 +580,59 @@ export class CustomersService {
     if (officeId && salesRep.officeId !== officeId) {
       throw new BadRequestException("Sales rep must belong to the customer office");
     }
+  }
+
+  private async ensureRouteAllowed(routeId: number, officeId: number) {
+    const route = await this.prisma.route.findFirst({
+      where: { id: routeId, officeId, status: { not: "DELETED" } }
+    });
+
+    if (!route) {
+      throw new BadRequestException("Route is invalid for the selected office");
+    }
+  }
+
+  private async setPrimaryRouteInTransaction(
+    tx: Prisma.TransactionClient,
+    customerId: number,
+    routeId: number,
+    actorUserId: number
+  ) {
+    await tx.routeCustomer.updateMany({
+      data: { isPrimary: false },
+      where: { customerId, isPrimary: true, status: "ACTIVE" }
+    });
+
+    await tx.routeCustomer.upsert({
+      create: {
+        assignedById: actorUserId,
+        customerId,
+        isPrimary: true,
+        routeId
+      },
+      update: {
+        assignedById: actorUserId,
+        assignedAt: new Date(),
+        isPrimary: true,
+        status: "ACTIVE"
+      },
+      where: { routeId_customerId: { customerId, routeId } }
+    });
+  }
+
+  private async getSalesRepContext(userId: number) {
+    const salesRep = await this.prisma.salesRep.findFirst({
+      where: {
+        status: "ACTIVE",
+        userId
+      }
+    });
+
+    if (!salesRep) {
+      throw new BadRequestException("Authenticated user is not linked to an active sales rep");
+    }
+
+    return salesRep;
   }
 
   private async resolveUniqueCode(code?: string) {

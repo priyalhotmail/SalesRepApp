@@ -5,8 +5,10 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
+import { AuthenticatedUser } from "../common/types/authenticated-user.type";
 import { RequestContext } from "../common/types/request-context.type";
 import { toAuditJson } from "../common/utils/audit-json.util";
+import { isSalesRepScopedActor } from "../common/utils/user-scope.util";
 import { getPagination, toPaginatedResult } from "../common/utils/pagination.util";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -28,11 +30,14 @@ export class CustomerVisitsService {
     private readonly prisma: PrismaService
   ) {}
 
-  async list(query: CustomerVisitQueryDto) {
+  async list(query: CustomerVisitQueryDto, actor?: AuthenticatedUser) {
     const { limit, page, skip, take } = getPagination(query);
+    const salesRepId = actor && isSalesRepScopedActor(actor)
+      ? await this.getSalesRepId(actor.id)
+      : query.salesRepId;
     const where: Prisma.CustomerVisitWhereInput = {
       customerId: query.customerId,
-      salesRepId: query.salesRepId,
+      salesRepId,
       status: query.status,
       visitType: query.visitType
     };
@@ -58,9 +63,12 @@ export class CustomerVisitsService {
   }
 
   async create(dto: CreateCustomerVisitDto, context: RequestContext) {
-    await this.ensureCustomer(dto.customerId);
-    if (dto.salesRepId) {
-      await this.ensureSalesRep(dto.salesRepId);
+    const salesRepId = isSalesRepScopedActor(context.actor)
+      ? await this.getSalesRepId(context.actor.id)
+      : dto.salesRepId;
+    await this.ensureCustomer(dto.customerId, salesRepId);
+    if (salesRepId) {
+      await this.ensureSalesRep(salesRepId);
     }
     const visit = await this.prisma.customerVisit.create({
       data: {
@@ -68,7 +76,8 @@ export class CustomerVisitsService {
         customerId: dto.customerId,
         notes: dto.notes,
         plannedAt: dto.plannedAt ? new Date(dto.plannedAt) : undefined,
-        salesRepId: dto.salesRepId,
+        salesRepId,
+        visitedAt: dto.visitedAt ? new Date(dto.visitedAt) : undefined,
         visitType: dto.visitType
       },
       include: visitInclude
@@ -83,6 +92,27 @@ export class CustomerVisitsService {
       userAgent: context.userAgent
     });
     return visit;
+  }
+
+  async getNewVisitContext(actor: AuthenticatedUser) {
+    if (!isSalesRepScopedActor(actor)) {
+      return { salesRep: null };
+    }
+
+    const salesRep = await this.prisma.salesRep.findFirst({
+      include: { user: { select: { displayName: true } } },
+      where: { status: "ACTIVE", userId: actor.id }
+    });
+    if (!salesRep) {
+      throw new BadRequestException("Authenticated user is not linked to an active sales rep");
+    }
+
+    return {
+      salesRep: {
+        id: salesRep.id,
+        name: salesRep.user?.displayName ?? salesRep.name
+      }
+    };
   }
 
   async complete(id: number, dto: CompleteCustomerVisitDto, context: RequestContext) {
@@ -189,9 +219,9 @@ export class CustomerVisitsService {
     return visit;
   }
 
-  private async ensureCustomer(customerId: number) {
+  private async ensureCustomer(customerId: number, salesRepId?: number) {
     const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, status: { not: "DELETED" } }
+      where: { id: customerId, salesRepId, status: { not: "DELETED" } }
     });
     if (!customer) {
       throw new BadRequestException("Customer is invalid");
@@ -200,11 +230,22 @@ export class CustomerVisitsService {
 
   private async ensureSalesRep(salesRepId: number) {
     const salesRep = await this.prisma.salesRep.findFirst({
-      where: { id: salesRepId, status: { not: "DELETED" } }
+      where: { id: salesRepId, status: "ACTIVE" }
     });
     if (!salesRep) {
       throw new BadRequestException("Sales rep is invalid");
     }
+  }
+
+  private async getSalesRepId(userId: number) {
+    const salesRep = await this.prisma.salesRep.findFirst({
+      select: { id: true },
+      where: { status: "ACTIVE", userId }
+    });
+    if (!salesRep) {
+      throw new BadRequestException("Authenticated user is not linked to an active sales rep");
+    }
+    return salesRep.id;
   }
 
   private validateGeoPair(latitude?: number, longitude?: number) {

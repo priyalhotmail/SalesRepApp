@@ -394,6 +394,7 @@ model Warehouse {
   inventoryStocks    InventoryStock[]
   inventoryMovements InventoryMovement[]
   stockReservations  StockReservation[]
+  primarySalesReps   SalesRep[]           @relation("SalesRepPrimaryWarehouse")
   orders             Order[]
   deliveries         Delivery[]
   outgoingTransfers  WarehouseTransfer[] @relation("TransferFromWarehouse")
@@ -411,6 +412,7 @@ model SalesRep {
   id          Int            @id @default(autoincrement())
   officeId    Int            @map("office_id")
   userId      Int?           @map("user_id")
+  warehouseId Int?           @map("warehouse_id")
   code        String         @unique @db.VarChar(40)
   name        String         @db.VarChar(160)
   nic         String         @db.VarChar(80)
@@ -427,6 +429,7 @@ model SalesRep {
 
   office          Office           @relation(fields: [officeId], references: [id])
   user            User?            @relation(fields: [userId], references: [id])
+  warehouse       Warehouse?       @relation("SalesRepPrimaryWarehouse", fields: [warehouseId], references: [id])
   customers       Customer[]
   orders          Order[]
   salesTargets    SalesTarget[]
@@ -436,6 +439,7 @@ model SalesRep {
 
   @@index([officeId])
   @@index([userId])
+  @@index([warehouseId])
   @@index([status])
   @@map("sales_reps")
 }
@@ -943,6 +947,8 @@ model Route {
 model RouteCustomer {
   routeId      Int      @map("route_id")
   customerId   Int      @map("customer_id")
+  isPrimary    Boolean  @default(false) @map("is_primary")
+  status       RecordStatus @default(ACTIVE)
   assignedAt   DateTime @default(now()) @map("assigned_at")
   assignedById Int?     @map("assigned_by_id")
 
@@ -951,6 +957,8 @@ model RouteCustomer {
 
   @@id([routeId, customerId])
   @@index([customerId])
+  @@index([customerId, isPrimary, status])
+  @@index([routeId, status])
   @@map("route_customers")
 }
 

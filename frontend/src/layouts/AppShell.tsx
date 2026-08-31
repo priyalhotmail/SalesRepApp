@@ -27,40 +27,41 @@ import {
 import { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { hasAnyPermission } from "../auth/permissions";
 
 const drawerWidth = 264;
 
 const navigationItems = [
-  { icon: <DashboardIcon />, label: "Dashboard", path: "/" },
-  { icon: <PeopleIcon />, label: "Users", path: "/module/users" },
-  { icon: <StorefrontIcon />, label: "Sales Reps", path: "/module/salesReps" },
-  { icon: <StorefrontIcon />, label: "Offices", path: "/module/offices" },
-  { icon: <StorefrontIcon />, label: "Factories", path: "/module/factories" },
-  { icon: <InventoryIcon />, label: "Warehouses", path: "/module/warehouses" },
-  { icon: <PeopleIcon />, label: "Customers", path: "/module/customers" },
-  { icon: <PeopleIcon />, label: "Customer Approvals", path: "/module/customerApprovals" },
-  { icon: <InventoryIcon />, label: "Product Groups", path: "/module/productGroups" },
-  { icon: <InventoryIcon />, label: "Products", path: "/module/products" },
-  { icon: <ReceiptIcon />, label: "Price Lists", path: "/module/priceLists" },
-  { icon: <ReceiptIcon />, label: "Discounts", path: "/discounts" },
-  { icon: <InventoryIcon />, label: "Inventory Stock", path: "/module/inventoryStock" },
-  { icon: <LocalShippingIcon />, label: "Routes", path: "/module/routes" },
-  { icon: <ReceiptIcon />, label: "Orders", path: "/module/orders" },
-  { icon: <LocalShippingIcon />, label: "Delivery", path: "/module/deliveries" },
-  { icon: <ReceiptIcon />, label: "Sales Invoices", path: "/module/salesInvoices" },
-  { icon: <ReceiptIcon />, label: "Payments", path: "/module/payments" },
-  { icon: <ReceiptIcon />, label: "Cheques", path: "/module/cheques" },
-  { icon: <ReceiptIcon />, label: "Returns", path: "/module/returns" },
-  { icon: <AssessmentIcon />, label: "Credit Control", path: "/credit-control" },
-  { icon: <AssessmentIcon />, label: "Sales Targets", path: "/module/salesTargets" },
-  { icon: <AssessmentIcon />, label: "Commissions", path: "/commissions" },
-  { icon: <LocalShippingIcon />, label: "Warehouse Transfers", path: "/module/warehouseTransfers" },
-  { icon: <PeopleIcon />, label: "Customer Visits", path: "/module/customerVisits" },
-  { icon: <ReceiptIcon />, label: "Attachments", path: "/module/attachments" },
-  { icon: <ReceiptIcon />, label: "Notifications", path: "/module/notifications" },
-  { icon: <AssessmentIcon />, label: "Reports", path: "/reports" },
-  { icon: <AssessmentIcon />, label: "Audit Logs", path: "/module/auditLogs" },
-  { icon: <SettingsIcon />, label: "System Settings", path: "/system-settings" }
+  { icon: <DashboardIcon />, label: "Dashboard", path: "/", permissions: ["dashboard.read"] },
+  { icon: <PeopleIcon />, label: "Users", path: "/module/users", permissions: ["users.read"] },
+  { icon: <StorefrontIcon />, label: "Sales Reps", path: "/module/salesReps", permissions: ["sales_reps.read"] },
+  { icon: <StorefrontIcon />, label: "Offices", path: "/module/offices", permissions: ["company_structure.read"] },
+  { icon: <StorefrontIcon />, label: "Factories", path: "/module/factories", permissions: ["company_structure.read"] },
+  { icon: <InventoryIcon />, label: "Warehouses", path: "/module/warehouses", permissions: ["company_structure.read"] },
+  { icon: <PeopleIcon />, label: "Customers", path: "/module/customers", permissions: ["customers.read"] },
+  { icon: <PeopleIcon />, label: "Customer Approvals", path: "/module/customerApprovals", permissions: ["customers.approve_change"] },
+  { icon: <InventoryIcon />, label: "Product Groups", path: "/module/productGroups", permissions: ["product_catalogue.read"] },
+  { icon: <InventoryIcon />, label: "Products", path: "/module/products", permissions: ["product_catalogue.read"] },
+  { icon: <ReceiptIcon />, label: "Price Lists", path: "/module/priceLists", permissions: ["price_lists.read"] },
+  { icon: <ReceiptIcon />, label: "Discounts", path: "/discounts", permissions: ["discounts.read"] },
+  { icon: <InventoryIcon />, label: "Inventory Stock", path: "/module/inventoryStock", permissions: ["inventory.read"] },
+  { icon: <LocalShippingIcon />, label: "Routes", path: "/module/routes", permissions: ["routes.read"] },
+  { icon: <ReceiptIcon />, label: "Orders", path: "/module/orders", permissions: ["orders.read"] },
+  { icon: <LocalShippingIcon />, label: "Delivery", path: "/module/deliveries", permissions: ["delivery.read"] },
+  { icon: <ReceiptIcon />, label: "Sales Invoices", path: "/module/salesInvoices", permissions: ["sales_invoices.read"] },
+  { icon: <ReceiptIcon />, label: "Payments", path: "/module/payments", permissions: ["payments.read"] },
+  { icon: <ReceiptIcon />, label: "Cheques", path: "/module/cheques", permissions: ["cheques.read"] },
+  { icon: <ReceiptIcon />, label: "Returns", path: "/module/returns", permissions: ["returns.read"] },
+  { icon: <AssessmentIcon />, label: "Credit Control", path: "/credit-control", permissions: ["credit_control.read"] },
+  { icon: <AssessmentIcon />, label: "Sales Targets", path: "/module/salesTargets", permissions: ["sales_targets.read"] },
+  { icon: <AssessmentIcon />, label: "Commissions", path: "/commissions", permissions: ["commissions.read"] },
+  { icon: <LocalShippingIcon />, label: "Warehouse Transfers", path: "/module/warehouseTransfers", permissions: ["warehouse_transfers.read"] },
+  { icon: <PeopleIcon />, label: "Customer Visits", path: "/module/customerVisits", permissions: ["customer_visits.read"] },
+  { icon: <ReceiptIcon />, label: "Attachments", path: "/module/attachments", permissions: ["attachments.read"] },
+  { icon: <ReceiptIcon />, label: "Notifications", path: "/module/notifications", permissions: ["notifications.read"] },
+  { icon: <AssessmentIcon />, label: "Reports", path: "/reports", permissions: ["reports.loading", "reports.sales", "reports.collections", "reports.inventory", "reports.delivery", "reports.performance"] },
+  { icon: <AssessmentIcon />, label: "Audit Logs", path: "/module/auditLogs", permissions: ["audit.read"] },
+  { icon: <SettingsIcon />, label: "System Settings", path: "/system-settings", permissions: ["system_config.read"] }
 ];
 
 export function AppShell() {
@@ -70,8 +71,11 @@ export function AppShell() {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const visibleNavigationItems = navigationItems.filter((item) =>
+    hasAnyPermission(user, item.permissions)
+  );
   const activeItem =
-    navigationItems.find((item) => item.path === location.pathname) ?? {
+    visibleNavigationItems.find((item) => item.path === location.pathname) ?? {
       label: "Dashboard"
     };
 
@@ -86,7 +90,7 @@ export function AppShell() {
         Sales System
       </Typography>
       <List disablePadding sx={{ flex: 1, overflowY: "auto" }}>
-        {navigationItems.map((item) => (
+        {visibleNavigationItems.map((item) => (
           <ListItemButton
             component={NavLink}
             key={item.path}

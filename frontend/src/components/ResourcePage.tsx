@@ -8,18 +8,28 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormGroup,
   FormControlLabel,
   IconButton,
   MenuItem,
   Pagination,
   Stack,
   Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   TextField,
-  Tooltip
+  Tooltip,
+  Typography,
+  useMediaQuery,
+  useTheme
 } from "@mui/material";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -27,6 +37,7 @@ import {
   apiRequest,
   normalizeListResponse
 } from "../api/client";
+import { useAuth, AuthUser } from "../auth/AuthContext";
 import { compactObject, getValueByPath } from "../utils/object";
 import { DataState } from "./DataState";
 import { PageHeader } from "./PageHeader";
@@ -40,35 +51,60 @@ export type ResourceReference = {
   valuePath?: string;
 };
 
+type ReferenceOption = {
+  code?: string;
+  label: string;
+  value: string;
+};
+
+type OrderItemValue = {
+  discountAmount?: number;
+  freeQuantity?: number;
+  lineTotal?: number;
+  productId: number;
+  productName?: string;
+  quantity: number;
+  unitPrice?: number;
+};
+
 export type ResourceField = {
   createOnly?: boolean;
   helperText?: string;
   label: string;
+  loadOptions?: boolean;
   name: string;
-  options?: { label: string; value: string }[];
+  options?: ReferenceOption[];
   reference?: ResourceReference;
   required?: boolean;
-  type?: "checkbox" | "date" | "datetime" | "json" | "number" | "select" | "text";
+  type?: "checkbox" | "date" | "datetime" | "json" | "multiReference" | "number" | "orderItems" | "select" | "text";
 };
 
 export type ResourceAction<T> = {
   bodyFields?: ResourceField[];
+  disabled?: (record: T, user: AuthUser | null) => boolean;
   endpoint: (record: T) => string;
   label: string;
   method?: "POST" | "PATCH" | "PUT" | "DELETE";
+  visible?: (record: T, user: AuthUser | null) => boolean;
   variant?: "outlined" | "contained";
 };
 
 export type ResourcePageConfig<T extends Record<string, unknown>> = {
   actions?: ResourceAction<T>[];
+  canEdit?: (user: AuthUser | null) => boolean;
   columns: DataColumn<T>[];
   createEndpoint?: string | ((payload: Record<string, unknown>) => string);
   createMethod?: "POST" | "PUT";
   deleteEndpoint?: (record: T) => string;
+  detailEndpoint?: (record: T) => string;
   endpoint: string;
+  formContextEndpoint?: string;
+  formContextSalesRepReference?: ResourceReference;
   fields?: ResourceField[];
   getRowId?: (record: T) => string | number;
   listQuery?: Record<string, number | string | boolean | undefined>;
+  requiredPermissions?: string[];
+  roleAssignmentEndpoint?: (record: T) => string;
   searchPlaceholder?: string;
   subtitle?: string;
   title: string;
@@ -79,11 +115,21 @@ type ResourcePageProps<T extends Record<string, unknown>> = {
   config: ResourcePageConfig<T>;
 };
 
+type CustomerFormContext = {
+  salesRep: null | {
+    id: number;
+    name: string;
+    office?: { id: number; name: string };
+    officeId?: number;
+  };
+};
+
 const pageSize = 10;
 
 export function ResourcePage<T extends Record<string, unknown>>({
   config
 }: ResourcePageProps<T>) {
+  const { user } = useAuth();
   const [records, setRecords] = useState<T[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -99,12 +145,13 @@ export function ResourcePage<T extends Record<string, unknown>>({
   const [actionConfig, setActionConfig] = useState<ResourceAction<T> | null>(null);
   const [actionValues, setActionValues] = useState<Record<string, unknown>>({});
   const [referenceOptions, setReferenceOptions] = useState<
-    Record<string, { label: string; value: string }[]>
+    Record<string, ReferenceOption[]>
   >({});
+  const [formContext, setFormContext] = useState<CustomerFormContext | null>(null);
 
   const getRowId = config.getRowId ?? ((record: T) => record.id as number);
   const canCreate = Boolean(config.fields?.length && config.createEndpoint);
-  const canEdit = Boolean(config.fields?.length && config.updateEndpoint);
+  const canEdit = Boolean(config.fields?.length && config.updateEndpoint) && (config.canEdit?.(user) ?? true);
   const canDelete = Boolean(config.deleteEndpoint);
   const referenceFields = useMemo(() => collectReferenceFields(config), [config]);
   const visibleFormFields = editingRecord
@@ -178,18 +225,135 @@ export function ResourcePage<T extends Record<string, unknown>>({
     };
   }, [referenceFields]);
 
+  const salesRepCustomerContext = formContext?.salesRep;
+
+  useEffect(() => {
+    if (!formOpen || !config.formContextEndpoint) {
+      return;
+    }
+
+    let isActive = true;
+    async function loadFormContext() {
+      try {
+        const context = await apiRequest<CustomerFormContext>(config.formContextEndpoint!);
+        if (!isActive) {
+          return;
+        }
+        setFormContext(context);
+        if (context.salesRep) {
+          const office = context.salesRep.office;
+          setFormValues((current) => ({
+            ...current,
+            salesRepId: String(context.salesRep!.id)
+          }));
+          setReferenceOptions((current) => ({
+            ...current,
+            ...(office ? { officeId: [{ label: office.name, value: String(office.id) }] } : {}),
+            salesRepId: [{ label: context.salesRep!.name, value: String(context.salesRep!.id) }]
+          }));
+          if (office) {
+            setFormValues((current) => ({ ...current, officeId: String(office.id) }));
+          }
+        } else if (config.formContextSalesRepReference) {
+          const salesReps = await apiRequest<unknown>(config.formContextSalesRepReference.endpoint, {
+            query: { limit: 100, ...config.formContextSalesRepReference.query }
+          });
+          if (isActive) {
+            setReferenceOptions((current) => ({
+              ...current,
+              salesRepId: toReferenceOptions(salesReps, config.formContextSalesRepReference!)
+            }));
+          }
+        } else if (config.endpoint === "customers") {
+          const offices = await apiRequest<unknown>("offices", { query: { limit: 100 } });
+          if (isActive) {
+            setReferenceOptions((current) => ({
+              ...current,
+              officeId: toReferenceOptions(offices, {
+                endpoint: "offices",
+                labelPath: "name",
+                secondaryLabelPath: "code"
+              })
+            }));
+          }
+        }
+      } catch (currentError) {
+        if (isActive) {
+          setFormError(getErrorMessage(currentError));
+        }
+      }
+    }
+
+    void loadFormContext();
+    return () => {
+      isActive = false;
+    };
+  }, [config.endpoint, config.formContextEndpoint, config.formContextSalesRepReference, formOpen]);
+
+  useEffect(() => {
+    if (!formOpen || !config.formContextEndpoint || config.endpoint !== "customers") {
+      return;
+    }
+
+    const officeId = Number(formValues.officeId);
+    if (!officeId) {
+      return;
+    }
+
+    let isActive = true;
+    async function loadOfficeOptions() {
+      try {
+        const [salesReps, routes] = await Promise.all([
+          salesRepCustomerContext
+            ? Promise.resolve(undefined)
+            : apiRequest<unknown>("sales-reps", { query: { limit: 100, officeId } }),
+          apiRequest<unknown>("routes", { query: { limit: 100, officeId } })
+        ]);
+        if (!isActive) {
+          return;
+        }
+
+        setReferenceOptions((current) => ({
+          ...current,
+          ...(salesReps === undefined
+            ? {}
+            : { salesRepId: toReferenceOptions(salesReps, { endpoint: "sales-reps", labelPath: "name", secondaryLabelPath: "code" }) }),
+          routeId: toReferenceOptions(routes, { endpoint: "routes", labelPath: "name", secondaryLabelPath: "code" })
+        }));
+      } catch (currentError) {
+        if (isActive) {
+          setFormError(getErrorMessage(currentError));
+        }
+      }
+    }
+
+    void loadOfficeOptions();
+    return () => {
+      isActive = false;
+    };
+  }, [config.formContextEndpoint, formOpen, formValues.officeId, salesRepCustomerContext]);
+
   const openCreate = () => {
     setEditingRecord(null);
+    setFormContext(null);
     setFormValues(getInitialValues(config.fields ?? []));
     setFormError(null);
     setFormOpen(true);
   };
 
-  const openEdit = (record: T) => {
-    setEditingRecord(record);
-    setFormValues(getInitialValues(config.fields ?? [], record));
+  const openEdit = async (record: T) => {
+    setFormContext(null);
     setFormError(null);
-    setFormOpen(true);
+    try {
+      const savedRecord = config.detailEndpoint
+        ? await apiRequest<T>(config.detailEndpoint(record))
+        : record;
+      setEditingRecord(savedRecord);
+      setFormValues(getInitialValues(config.fields ?? [], savedRecord, referenceOptions));
+      setFormOpen(true);
+    } catch (currentError) {
+      setFormError(getErrorMessage(currentError));
+    }
   };
 
   const saveForm = async () => {
@@ -205,10 +369,17 @@ export function ResourcePage<T extends Record<string, unknown>>({
         editingRecord ? "update" : "create"
       );
       if (editingRecord && config.updateEndpoint) {
+        const { roleIds, ...updatePayload } = payload;
         await apiRequest(config.updateEndpoint(editingRecord), {
-          body: payload,
+          body: updatePayload,
           method: "PATCH"
         });
+        if (config.roleAssignmentEndpoint && Array.isArray(roleIds)) {
+          await apiRequest(config.roleAssignmentEndpoint(editingRecord), {
+            body: { roleIds },
+            method: "PUT"
+          });
+        }
       } else if (config.createEndpoint) {
         const endpoint =
           typeof config.createEndpoint === "function"
@@ -274,21 +445,24 @@ export function ResourcePage<T extends Record<string, unknown>>({
       <Stack direction="row" flexWrap="wrap" gap={0.5}>
         {canEdit && (
           <Tooltip title="Edit">
-            <IconButton color="primary" onClick={() => openEdit(record)} size="small">
+            <IconButton color="primary" onClick={() => void openEdit(record)} size="small">
               <EditIcon fontSize="small" />
             </IconButton>
           </Tooltip>
         )}
-        {config.actions?.map((action) => (
-          <Button
-            key={action.label}
-            onClick={() => openAction(record, action)}
-            size="small"
-            variant={action.variant ?? "outlined"}
-          >
-            {action.label}
-          </Button>
-        ))}
+        {config.actions
+          ?.filter((action) => action.visible?.(record, user) ?? true)
+          .map((action) => (
+            <Button
+              disabled={action.disabled?.(record, user) ?? false}
+              key={action.label}
+              onClick={() => openAction(record, action)}
+              size="small"
+              variant={action.variant ?? "outlined"}
+            >
+              {action.label}
+            </Button>
+          ))}
         {canDelete && (
           <Tooltip title="Delete">
             <IconButton color="error" onClick={() => void deleteRecord(record)} size="small">
@@ -298,7 +472,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
         )}
       </Stack>
     ),
-    [canDelete, canEdit, config.actions]
+    [canDelete, canEdit, config.actions, user]
   );
 
   const actions = useMemo(
@@ -366,12 +540,28 @@ export function ResourcePage<T extends Record<string, unknown>>({
             {formError && <Alert severity="error">{formError}</Alert>}
             {visibleFormFields.map((field) => (
               <FormField
+                disabled={Boolean(
+                  salesRepCustomerContext &&
+                  (field.name === "officeId" || field.name === "salesRepId")
+                )}
                 field={field}
                 key={field.name}
                 onChange={(value) =>
-                  setFormValues((current) => ({ ...current, [field.name]: value }))
+                  setFormValues((current) =>
+                    field.name === "officeId"
+                      ? { ...current, officeId: value, routeId: "", salesRepId: "" }
+                      : { ...current, [field.name]: value }
+                  )
                 }
                 options={getFieldOptions(field, referenceOptions)}
+                helperText={
+                  salesRepCustomerContext && field.name === "officeId"
+                    ? "Automatically set from your Sales Rep profile."
+                    : salesRepCustomerContext && field.name === "salesRepId"
+                      ? "Automatically set to your Sales Rep profile."
+                      : undefined
+                }
+                values={formValues}
                 value={formValues[field.name]}
               />
             ))}
@@ -403,6 +593,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
                   setActionValues((current) => ({ ...current, [field.name]: value }))
                 }
                 options={getFieldOptions(field, referenceOptions)}
+                values={actionValues}
                 value={actionValues[field.name]}
               />
             ))}
@@ -420,22 +611,80 @@ export function ResourcePage<T extends Record<string, unknown>>({
 }
 
 function FormField({
+  disabled,
   field,
+  helperText,
   onChange,
   options,
+  values,
   value
 }: {
+  disabled?: boolean;
   field: ResourceField;
+  helperText?: string;
   onChange: (value: unknown) => void;
-  options?: { label: string; value: string }[];
+  options?: ReferenceOption[];
+  values?: Record<string, unknown>;
   value: unknown;
 }) {
+  if (field.type === "multiReference") {
+    const currentValues = Array.isArray(value) ? value.map(String) : [];
+    return (
+      <FormGroup>
+        <Typography component="div" sx={{ mb: 0.5 }} variant="body2">
+          {field.label}
+        </Typography>
+        {options?.map((option) => {
+          const checked =
+            currentValues.includes(option.value) ||
+            Boolean(option.code && currentValues.includes(option.code));
+          return (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={checked}
+                  disabled={disabled}
+                  onChange={(event) => {
+                    const next = new Set(
+                      currentValues
+                        .map((item) => options.find((candidate) => candidate.code === item)?.value ?? item)
+                        .filter((item) => /^\d+$/.test(item))
+                    );
+                    if (event.target.checked) {
+                      next.add(option.value);
+                    } else {
+                      next.delete(option.value);
+                    }
+                    onChange(Array.from(next).map(Number));
+                  }}
+                />
+              }
+              key={option.value}
+              label={option.label}
+            />
+          );
+        })}
+      </FormGroup>
+    );
+  }
+
+  if (field.type === "orderItems") {
+    return (
+      <OrderItemsField
+        customerId={Number(values?.customerId || 0)}
+        onChange={onChange}
+        value={Array.isArray(value) ? (value as OrderItemValue[]) : []}
+      />
+    );
+  }
+
   if (field.type === "checkbox") {
     return (
       <FormControlLabel
         control={
           <Switch
             checked={Boolean(value)}
+            disabled={disabled}
             onChange={(event) => onChange(event.target.checked)}
           />
         }
@@ -448,7 +697,8 @@ function FormField({
     return (
       <TextField
         fullWidth
-        helperText={field.helperText}
+        disabled={disabled}
+        helperText={helperText ?? field.helperText}
         label={field.label}
         onChange={(event) => onChange(event.target.value)}
         required={field.required}
@@ -467,23 +717,315 @@ function FormField({
   return (
     <TextField
       fullWidth
-      helperText={field.helperText}
+      disabled={disabled}
+      helperText={helperText ?? field.helperText}
       label={field.label}
       minRows={field.type === "json" ? 4 : undefined}
       multiline={field.type === "json"}
       onChange={(event) => onChange(event.target.value)}
       required={field.required}
-      type={field.type === "number" ? "number" : field.type === "datetime" ? "datetime-local" : "text"}
+      slotProps={
+        field.type === "date" || field.type === "datetime"
+          ? { inputLabel: { shrink: true } }
+          : undefined
+      }
+      type={
+        field.type === "number"
+          ? "number"
+          : field.type === "datetime"
+            ? "datetime-local"
+            : field.type === "date"
+              ? "date"
+              : "text"
+      }
       value={value ?? ""}
     />
   );
 }
 
-function getInitialValues(fields: ResourceField[], record?: Record<string, unknown>) {
+function OrderItemsField({
+  customerId,
+  onChange,
+  value
+}: {
+  customerId: number;
+  onChange: (value: OrderItemValue[]) => void;
+  value: OrderItemValue[];
+}) {
+  const theme = useTheme();
+  const isDesktop = useMediaQuery(theme.breakpoints.up("md"));
+  const [products, setProducts] = useState<ReferenceOption[]>([]);
+  const [productId, setProductId] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    async function loadProducts() {
+      const response = await apiRequest<unknown>("orders/catalogue-products", {
+        query: { limit: 100 }
+      });
+      const rows = normalizeListResponse<Record<string, unknown>>(response).data;
+      if (isActive) {
+        setProducts(
+          rows.map((row) => ({
+            code: typeof row.code === "string" ? row.code : undefined,
+            label: [row.code, row.name].filter(Boolean).join(" - "),
+            value: String(row.id)
+          }))
+        );
+      }
+    }
+
+    void loadProducts().catch((currentError) => setError(getErrorMessage(currentError)));
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const addItem = async () => {
+    const selectedProductId = Number(productId);
+    const selectedQuantity = Number(quantity);
+    if (!selectedProductId || selectedQuantity <= 0) {
+      setError("Select an item and enter a quantity greater than 0.");
+      return;
+    }
+    if (value.some((item) => item.productId === selectedProductId)) {
+      setError("This item is already in the order.");
+      return;
+    }
+    const next = await quoteItems([
+      ...value,
+      { productId: selectedProductId, quantity: selectedQuantity }
+    ], customerId, products);
+    onChange(next);
+    setProductId("");
+    setQuantity("1");
+    setError(null);
+  };
+
+  const updateQuantity = async (targetProductId: number, nextQuantity: number) => {
+    if (nextQuantity <= 0) {
+      setError("Quantity must be greater than 0.");
+      return;
+    }
+    onChange(await quoteItems(
+      value.map((item) =>
+        item.productId === targetProductId ? { ...item, quantity: nextQuantity } : item
+      ),
+      customerId,
+      products
+    ));
+    setError(null);
+  };
+
+  const removeItem = (targetProductId: number) => {
+    onChange(value.filter((item) => item.productId !== targetProductId));
+  };
+
+  const subtotal = value.reduce((sum, item) => sum + item.quantity * (item.unitPrice ?? 0), 0);
+  const discount = value.reduce((sum, item) => sum + (item.discountAmount ?? 0), 0);
+  const total = value.reduce((sum, item) => sum + (item.lineTotal ?? 0), 0);
+
+  return (
+    <Stack spacing={1.5}>
+      <Typography fontWeight={600}>Items</Typography>
+      {error && <Alert severity="error">{error}</Alert>}
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+        <TextField
+          fullWidth
+          label="Item"
+          onChange={(event) => setProductId(event.target.value)}
+          select
+          value={productId}
+        >
+          {products.map((product) => (
+            <MenuItem key={product.value} value={product.value}>
+              {product.label}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          inputProps={{ min: 1 }}
+          label="Qty"
+          onChange={(event) => setQuantity(event.target.value)}
+          sx={{ width: { sm: 140 } }}
+          type="number"
+          value={quantity}
+        />
+        <Button onClick={() => void addItem()} sx={{ minHeight: 48 }} variant="contained">
+          Add
+        </Button>
+      </Stack>
+
+      {isDesktop ? (
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>Item Name</TableCell>
+              <TableCell>Qty</TableCell>
+              <TableCell>Retail Price</TableCell>
+              <TableCell>Discount</TableCell>
+              <TableCell>Net Value</TableCell>
+              <TableCell>Action</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {value.map((item) => (
+              <TableRow key={item.productId}>
+                <TableCell>{item.productName}</TableCell>
+                <TableCell>
+                  <TextField
+                    inputProps={{ min: 1 }}
+                    onChange={(event) => void updateQuantity(item.productId, Number(event.target.value))}
+                    size="small"
+                    type="number"
+                    value={item.quantity}
+                  />
+                </TableCell>
+                <TableCell>{formatMoney(item.unitPrice)}</TableCell>
+                <TableCell>{formatMoney(item.discountAmount)}</TableCell>
+                <TableCell>{formatMoney(item.lineTotal)}</TableCell>
+                <TableCell>
+                  <Button color="error" onClick={() => removeItem(item.productId)} size="small">
+                    Remove
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      ) : (
+        <Stack spacing={1}>
+          {value.map((item) => (
+            <Card key={item.productId} variant="outlined">
+              <CardContent>
+                <Stack spacing={1}>
+                  <Typography fontWeight={600}>{item.productName}</Typography>
+                  <TextField
+                    inputProps={{ min: 1 }}
+                    label="Qty"
+                    onChange={(event) => void updateQuantity(item.productId, Number(event.target.value))}
+                    type="number"
+                    value={item.quantity}
+                  />
+                  <Typography variant="body2">Retail Price: {formatMoney(item.unitPrice)}</Typography>
+                  <Typography variant="body2">Discount: {formatMoney(item.discountAmount)}</Typography>
+                  <Typography variant="body2">Net Value: {formatMoney(item.lineTotal)}</Typography>
+                  <Button color="error" onClick={() => removeItem(item.productId)}>
+                    Remove
+                  </Button>
+                </Stack>
+              </CardContent>
+            </Card>
+          ))}
+        </Stack>
+      )}
+
+      <Stack alignItems="flex-end" spacing={0.5}>
+        <Typography variant="body2">Subtotal: {formatMoney(subtotal)}</Typography>
+        <Typography variant="body2">Discount: {formatMoney(discount)}</Typography>
+        <Typography fontWeight={700}>Total: {formatMoney(total)}</Typography>
+      </Stack>
+    </Stack>
+  );
+}
+
+async function quoteItems(
+  items: Pick<OrderItemValue, "productId" | "quantity">[],
+  customerId: number,
+  products: ReferenceOption[]
+) {
+  if (!customerId) {
+    throw new Error("Select a customer before adding items.");
+  }
+
+  const quote = await apiRequest<{
+    lines: {
+      discountAmount: number;
+      freeQuantity?: number;
+      lineTotal: number;
+      productId: number;
+      unitPrice: number;
+    }[];
+    items: {
+      discountAmount: number;
+      freeQuantity?: number;
+      lineTotal: number;
+      productId: number;
+      unitPrice: number;
+    }[];
+  }>("orders/quote-items", {
+    body: {
+      customerId,
+      items: items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity
+      }))
+    },
+    method: "POST"
+  });
+
+  return items.map((item) => {
+    const quoteLine = quote.items.find((line) => line.productId === item.productId);
+    return {
+      discountAmount: quoteLine?.discountAmount ?? 0,
+      freeQuantity: quoteLine?.freeQuantity ?? 0,
+      lineTotal: quoteLine?.lineTotal ?? 0,
+      productId: item.productId,
+      productName: products.find((product) => product.value === String(item.productId))?.label ?? String(item.productId),
+      quantity: item.quantity,
+      unitPrice: quoteLine?.unitPrice ?? 0
+    };
+  });
+}
+
+function formatMoney(value?: number) {
+  return Number(value ?? 0).toFixed(2);
+}
+
+function getInitialValues(
+  fields: ResourceField[],
+  record?: Record<string, unknown>,
+  referenceOptions: Record<string, ReferenceOption[]> = {}
+) {
   return fields.reduce<Record<string, unknown>>((result, field) => {
     const value = record ? getValueByPath(record, field.name) : undefined;
     if (field.type === "json") {
       result[field.name] = value === undefined ? "" : JSON.stringify(value, null, 2);
+    } else if (field.type === "multiReference") {
+      if (Array.isArray(value)) {
+        result[field.name] = value;
+      } else if (field.name === "roleIds" && Array.isArray(record?.roles)) {
+        const options = referenceOptions[field.name] ?? [];
+        result[field.name] = (record.roles as string[]).map(
+          (roleCode) => options.find((option) => option.code === roleCode)?.value ?? roleCode
+        );
+      } else {
+        result[field.name] = [];
+      }
+    } else if (field.type === "orderItems") {
+      result[field.name] = Array.isArray(value)
+        ? value.map((item) => {
+            const row = item as Record<string, unknown>;
+            const product = row.product as Record<string, unknown> | undefined;
+            return {
+              discountAmount: Number(row.discountAmount ?? 0),
+              freeQuantity: Number(row.freeQuantity ?? 0),
+              lineTotal: Number(row.lineTotal ?? 0),
+              productId: Number(row.productId),
+              productName: product
+                ? [product.code, product.name].filter(Boolean).join(" - ")
+                : String(row.productId),
+              quantity: Number(row.quantity ?? 0),
+              unitPrice: Number(row.unitPrice ?? 0)
+            };
+          })
+        : [];
+    } else if (field.name === "routeId" && value === undefined && Array.isArray(record?.routeAssignments)) {
+      const primaryRoute = (record.routeAssignments as Record<string, unknown>[])[0];
+      result[field.name] = primaryRoute?.routeId ?? "";
     } else if (field.type === "checkbox") {
       result[field.name] = Boolean(value);
     } else if (field.type === "datetime" && typeof value === "string") {
@@ -505,7 +1047,7 @@ function collectReferenceFields<T extends Record<string, unknown>>(
   const references = new Map<string, ResourceField>();
 
   fields.forEach((field) => {
-    if (field.reference && !references.has(field.name)) {
+    if (field.reference && field.loadOptions !== false && !references.has(field.name)) {
       references.set(field.name, field);
     }
   });
@@ -515,7 +1057,7 @@ function collectReferenceFields<T extends Record<string, unknown>>(
 
 function getFieldOptions(
   field: ResourceField,
-  referenceOptions: Record<string, { label: string; value: string }[]>
+  referenceOptions: Record<string, ReferenceOption[]>
 ) {
   return field.reference ? referenceOptions[field.name] ?? [] : field.options;
 }
@@ -532,9 +1074,16 @@ function toReferenceOption(
   const value = getValueByPath(row, reference.valuePath ?? "id");
 
   return {
+    code: typeof row.code === "string" ? row.code : undefined,
     label: label || String(value),
     value: String(value)
   };
+}
+
+function toReferenceOptions(response: unknown, reference: ResourceReference) {
+  return normalizeListResponse<Record<string, unknown>>(response).data.map((row) =>
+    toReferenceOption(row, reference)
+  );
 }
 
 function formatReferencePart(value: unknown) {
@@ -563,6 +1112,19 @@ function buildPayload(
       result[field.name] = Boolean(value);
     } else if (field.type === "json") {
       result[field.name] = typeof value === "string" ? JSON.parse(value) : value;
+    } else if (field.type === "multiReference") {
+      const values = Array.isArray(value) ? value : [];
+      const numericValues = values.map(Number).filter((item) => Number.isInteger(item));
+      if (numericValues.length > 0) {
+        result[field.name] = numericValues;
+      }
+    } else if (field.type === "orderItems") {
+      result[field.name] = Array.isArray(value)
+        ? value.map((item) => ({
+            productId: Number((item as OrderItemValue).productId),
+            quantity: Number((item as OrderItemValue).quantity)
+          }))
+        : [];
     } else if (field.type === "datetime") {
       result[field.name] = new Date(String(value)).toISOString();
     } else {

@@ -15,10 +15,11 @@ INSERT INTO permissions (code, name, module, description) VALUES
   ('orders.amend', 'Request order amendments', 'orders', 'Request changes to an existing order'),
   ('orders.approve_amendment', 'Approve order amendments', 'orders', 'Approve or reject order amendment requests'),
   ('reports.loading', 'View loading reports', 'reports', 'View route and warehouse loading reports')
+AS new
 ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  module = VALUES(module),
-  description = VALUES(description);
+  name = new.name,
+  module = new.module,
+  description = new.description;
 
 INSERT IGNORE INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id
@@ -91,7 +92,6 @@ JOIN permissions p ON p.code IN (
   'orders.read',
   'orders.create',
   'orders.update',
-  'orders.cancel',
   'orders.amend',
   'reports.loading'
 )
@@ -131,9 +131,10 @@ INSERT INTO inventory_stocks (
   0.000,
   500.000
 )
+AS new
 ON DUPLICATE KEY UPDATE
-  on_hand_quantity = GREATEST(on_hand_quantity, VALUES(on_hand_quantity)),
-  low_stock_threshold = VALUES(low_stock_threshold);
+  on_hand_quantity = GREATEST(on_hand_quantity, new.on_hand_quantity),
+  low_stock_threshold = new.low_stock_threshold;
 
 INSERT INTO inventory_movements (
   warehouse_id,
@@ -176,9 +177,10 @@ INSERT INTO routes (
   'Seed route for Phase 5 testing',
   (SELECT id FROM users WHERE email = 'admin@sales.local' LIMIT 1)
 )
+AS new
 ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  description = VALUES(description);
+  name = new.name,
+  description = new.description;
 
 INSERT INTO route_schedules (
   route_id,
@@ -189,8 +191,9 @@ INSERT INTO route_schedules (
   'MONDAY',
   '08:00'
 )
+AS new
 ON DUPLICATE KEY UPDATE
-  planned_time = VALUES(planned_time),
+  planned_time = new.planned_time,
   status = 'ACTIVE';
 
 INSERT INTO audit_logs (

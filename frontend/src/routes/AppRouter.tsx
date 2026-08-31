@@ -2,6 +2,8 @@ import { Box, CircularProgress } from "@mui/material";
 import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "../auth/AuthContext";
+import { hasAnyPermission } from "../auth/permissions";
+import { AccessDenied } from "../components/AccessDenied";
 import { AppShell } from "../layouts/AppShell";
 
 const CreditControlPage = lazy(() =>
@@ -37,37 +39,78 @@ export function AppRouter() {
           <Route
             path="/discounts"
             element={withPageFallback(
-              <TabbedResourcesPage
-                tabs={[
-                  { configKey: "discountClasses", label: "Classes" },
-                  { configKey: "seasonalDiscounts", label: "Seasonal" },
-                  { configKey: "freeItemOffers", label: "Free Items" },
-                  { configKey: "additionalDiscountRequests", label: "Additional Bill" }
-                ]}
-                title="Discounts"
-              />
+              <PermissionGate permissions={["discounts.read"]}>
+                <TabbedResourcesPage
+                  tabs={[
+                    { configKey: "discountClasses", label: "Classes" },
+                    { configKey: "seasonalDiscounts", label: "Seasonal" },
+                    { configKey: "freeItemOffers", label: "Free Items" },
+                    { configKey: "additionalDiscountRequests", label: "Additional Bill" }
+                  ]}
+                  title="Discounts"
+                />
+              </PermissionGate>
             )}
           />
           <Route
             path="/commissions"
             element={withPageFallback(
-              <TabbedResourcesPage
-                tabs={[
-                  { configKey: "commissionRules", label: "Rules" },
-                  { configKey: "commissionRuns", label: "Runs" }
-                ]}
-                title="Commissions"
-              />
+              <PermissionGate permissions={["commissions.read"]}>
+                <TabbedResourcesPage
+                  tabs={[
+                    { configKey: "commissionRules", label: "Rules" },
+                    { configKey: "commissionRuns", label: "Runs" }
+                  ]}
+                  title="Commissions"
+                />
+              </PermissionGate>
             )}
           />
-          <Route path="/credit-control" element={withPageFallback(<CreditControlPage />)} />
-          <Route path="/reports" element={withPageFallback(<ReportsPage />)} />
-          <Route path="/system-settings" element={withPageFallback(<SystemSettingsPage />)} />
+          <Route
+            path="/credit-control"
+            element={withPageFallback(
+              <PermissionGate permissions={["credit_control.read"]}>
+                <CreditControlPage />
+              </PermissionGate>
+            )}
+          />
+          <Route
+            path="/reports"
+            element={withPageFallback(
+              <PermissionGate permissions={["reports.loading", "reports.sales", "reports.collections", "reports.inventory", "reports.delivery", "reports.performance"]}>
+                <ReportsPage />
+              </PermissionGate>
+            )}
+          />
+          <Route
+            path="/system-settings"
+            element={withPageFallback(
+              <PermissionGate permissions={["system_config.read"]}>
+                <SystemSettingsPage />
+              </PermissionGate>
+            )}
+          />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>
   );
+}
+
+function PermissionGate({
+  children,
+  permissions
+}: {
+  children: ReactNode;
+  permissions: string[];
+}) {
+  const { user } = useAuth();
+
+  if (!hasAnyPermission(user, permissions)) {
+    return <AccessDenied />;
+  }
+
+  return <>{children}</>;
 }
 
 function ProtectedShell() {
