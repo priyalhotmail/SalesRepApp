@@ -1,15 +1,23 @@
+import { Type } from "class-transformer";
 import { IsEmail, IsIn, IsInt, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 const salesRepStatuses = ["ACTIVE", "INACTIVE", "SUSPENDED"] as const;
 
 export class UpdateSalesRepDto {
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   officeId?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   userId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  warehouseId?: number;
 
   @IsOptional()
   @IsString()
@@ -42,4 +50,3 @@ export class UpdateSalesRepDto {
   @IsIn(salesRepStatuses)
   status?: (typeof salesRepStatuses)[number];
 }
-

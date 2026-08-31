@@ -19,7 +19,7 @@ export type AuthUser = {
   email: string;
   id: number;
   permissions?: string[];
-  roles?: { code: string; id: number; name: string }[];
+  roles?: string[];
 };
 
 type LoginResponse = {

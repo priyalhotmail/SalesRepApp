@@ -22,6 +22,7 @@ import {
   CreateOrderDto,
   OrderAmendmentRequestQueryDto,
   OrderQueryDto,
+  QuoteOrderItemsDto,
   ReviewOrderAmendmentRequestDto,
   UpdateOrderDto
 } from "./dto/order.dto";
@@ -34,8 +35,11 @@ export class OrdersController {
 
   @Get("orders")
   @Permissions("orders.read")
-  listOrders(@Query() query: OrderQueryDto) {
-    return this.service.listOrders(query);
+  listOrders(
+    @Query() query: OrderQueryDto,
+    @CurrentUser() actor: AuthenticatedUser
+  ) {
+    return this.service.listOrders(query, actor);
   }
 
   @Post("orders")
@@ -48,10 +52,25 @@ export class OrdersController {
     return this.service.createOrder(dto, buildRequestContext(actor, request));
   }
 
+  @Get("orders/catalogue-products")
+  @Permissions("orders.create")
+  listCatalogueProducts() {
+    return this.service.listCatalogueProducts();
+  }
+
+  @Post("orders/quote-items")
+  @Permissions("orders.create")
+  quoteItems(@Body() dto: QuoteOrderItemsDto) {
+    return this.service.quoteItems(dto);
+  }
+
   @Get("orders/:id")
   @Permissions("orders.read")
-  findOrderById(@Param("id", ParseIntPipe) id: number) {
-    return this.service.findOrderById(id);
+  findOrderById(
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentUser() actor: AuthenticatedUser
+  ) {
+    return this.service.findOrderById(id, actor);
   }
 
   @Patch("orders/:id")

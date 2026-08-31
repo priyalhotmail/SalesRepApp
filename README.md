@@ -1175,26 +1175,27 @@ Use a negative `quantityChange` for stock corrections. The API blocks adjustment
 ```json
 {
   "customerId": 1,
-  "salesRepId": 1,
-  "officeId": 1,
-  "routeId": 1,
-  "warehouseId": 1,
   "orderDate": "2026-06-25T00:00:00.000Z",
   "notes": "Customer requested morning delivery",
   "items": [
     {
       "productId": 1,
-      "packagingOptionId": 1,
-      "quantity": 12,
-      "freeQuantity": 1,
-      "unitPrice": 50,
-      "discountAmount": 25
+      "quantity": 12
     }
   ]
 }
 ```
 
-If `orderNumber` is not provided, the API generates one. If `unitPrice` is not provided, the product base price is used.
+If `orderNumber` is not provided, the API generates one. For Sales Rep users, the API derives `salesRepId`, `officeId`, `warehouseId`, and `routeId` from the authenticated user's linked Sales Rep, that Sales Rep's office and primary warehouse, the selected customer, and the customer's primary active route. These IDs must not be trusted from the frontend payload.
+
+Order pricing remains backend-authoritative. The frontend order editor sends product and quantity, may call `POST /api/orders/quote-items` for display, and the backend recalculates unit prices, discounts, free quantities, and totals during order creation/update.
+
+Order entry support endpoints:
+
+```text
+GET  /api/orders/catalogue-products
+POST /api/orders/quote-items
+```
 
 `PATCH /api/orders/:id`
 
@@ -2228,6 +2229,7 @@ mysql -u root -p sales_distribution_db < backend\sql\012_phase7_v1_field_feature
 mysql -u root -p sales_distribution_db < backend\sql\013_phase7_seed_v1_field_features.sql
 mysql -u root -p sales_distribution_db < backend\sql\014_phase8_reports_dashboard_config_schema.sql
 mysql -u root -p sales_distribution_db < backend\sql\015_phase8_seed_reports_dashboard_config.sql
+mysql -u root -p sales_distribution_db < backend\sql\016_sales_rep_warehouse_primary_route.sql
 ```
 
 5. Generate Prisma Client after the database schema is in place:
@@ -2329,7 +2331,8 @@ Run these checks after starting `npm run dev`.
 ### Sales and Inventory Flow
 
 - Adjust stock for a product and warehouse.
-- Create an order with JSON items.
+- Create an order with the structured item editor.
+- Confirm the Sales Rep order payload does not include trusted `salesRepId`, `officeId`, `warehouseId`, or `routeId` fields.
 - Approve the order.
 - Reserve stock.
 - Create a delivery from the reserved order.

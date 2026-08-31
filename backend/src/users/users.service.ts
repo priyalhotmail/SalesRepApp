@@ -23,6 +23,12 @@ type RequestContext = {
   userAgent?: string;
 };
 
+const privilegedRoleCodes = new Set([
+  "SUPER_ADMIN",
+  "MAIN_OFFICE_AUTHORIZED_USER",
+  "BRANCH_AUTHORIZED_USER"
+]);
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -81,7 +87,7 @@ export class UsersService {
       throw new ConflictException("A user with this email already exists");
     }
 
-    await this.ensureRolesExist(dto.roleIds ?? []);
+    await this.ensureRolesAssignable(dto.roleIds ?? [], context.actor);
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const createdUser = await this.prisma.$transaction(async (tx) => {
@@ -239,7 +245,7 @@ export class UsersService {
   }
 
   async assignRoles(id: number, dto: AssignUserRolesDto, context: RequestContext) {
-    await this.ensureRolesExist(dto.roleIds);
+    await this.ensureRolesAssignable(dto.roleIds, context.actor);
 
     const user = await this.prisma.user.findFirst({
       include: {
@@ -318,6 +324,32 @@ export class UsersService {
 
     if (roles.length !== roleIds.length) {
       throw new BadRequestException("One or more roles are invalid");
+    }
+  }
+
+  private async ensureRolesAssignable(
+    roleIds: number[],
+    actor: AuthenticatedUser
+  ) {
+    if (roleIds.length === 0) {
+      throw new BadRequestException("At least one role is required");
+    }
+
+    await this.ensureRolesExist(roleIds);
+
+    if (actor.roles.includes("SUPER_ADMIN")) {
+      return;
+    }
+
+    const privilegedCount = await this.prisma.role.count({
+      where: {
+        code: { in: Array.from(privilegedRoleCodes) },
+        id: { in: roleIds }
+      }
+    });
+
+    if (privilegedCount > 0) {
+      throw new BadRequestException("You cannot assign privileged roles");
     }
   }
 }

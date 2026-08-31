@@ -2,6 +2,7 @@ import {
   ResourceField,
   ResourcePageConfig
 } from "../components/ResourcePage";
+import { AuthUser } from "../auth/AuthContext";
 
 export type ResourceRecord = Record<string, unknown>;
 
@@ -39,6 +40,11 @@ const orderReference = {
   labelPath: "orderNumber",
   secondaryLabelPath: "customer.displayName"
 };
+const eligibleInvoiceOrderReference = {
+  endpoint: "sales-invoices/eligible-orders",
+  labelPath: "orderNumber",
+  secondaryLabelPath: "customer.displayName"
+};
 const productReference = {
   endpoint: "products",
   labelPath: "name",
@@ -51,6 +57,11 @@ const productGroupReference = {
 };
 const routeReference = {
   endpoint: "routes",
+  labelPath: "name",
+  secondaryLabelPath: "code"
+};
+const roleReference = {
+  endpoint: "roles",
   labelPath: "name",
   secondaryLabelPath: "code"
 };
@@ -75,6 +86,23 @@ const warehouseReference = {
   secondaryLabelPath: "code"
 };
 
+function isSuperAdmin(user: AuthUser | null) {
+  return user?.roles?.includes("SUPER_ADMIN") ?? false;
+}
+
+function isSalesRepOnly(user: AuthUser | null) {
+  return Boolean(
+    user?.roles?.includes("SALES_REP") &&
+    !user.roles.some((role) =>
+      ["SUPER_ADMIN", "MAIN_OFFICE_AUTHORIZED_USER", "BRANCH_AUTHORIZED_USER"].includes(role)
+    )
+  );
+}
+
+function isTerminalOrder(row: ResourceRecord) {
+  return ["CANCELLED", "DELIVERED"].includes(String(row.status));
+}
+
 export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>> = {
   users: {
     columns: [
@@ -86,14 +114,16 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "users",
     deleteEndpoint: (row) => `users/${row.id}`,
     endpoint: "users",
+    requiredPermissions: ["users.read"],
     fields: [
       { createOnly: true, label: "Email", name: "email", required: true },
       { label: "Display name", name: "displayName", required: true },
       { createOnly: true, label: "Password", name: "password" },
       { label: "Telephone", name: "telephone" },
-      { createOnly: true, helperText: "Example: [1, 2]", label: "Role IDs", name: "roleIds", type: "json" },
+      { label: "Roles", name: "roleIds", reference: roleReference, required: true, type: "multiReference" },
       { label: "Status", name: "status", options: statusOptions, type: "select" }
     ],
+    roleAssignmentEndpoint: (row) => `users/${row.id}/roles`,
     title: "Users",
     updateEndpoint: (row) => `users/${row.id}`
   },
@@ -108,9 +138,11 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "sales-reps",
     deleteEndpoint: (row) => `sales-reps/${row.id}`,
     endpoint: "sales-reps",
+    requiredPermissions: ["sales_reps.read"],
     fields: [
       { label: "Office", name: "officeId", reference: officeReference, required: true, type: "number" },
       { label: "Linked user", name: "userId", reference: userReference, type: "number" },
+      { label: "Primary warehouse", name: "warehouseId", reference: warehouseReference, type: "number" },
       { label: "Name", name: "name", required: true },
       { label: "NIC", name: "nic", required: true },
       { label: "Address", name: "address" },
@@ -132,6 +164,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "offices",
     deleteEndpoint: (row) => `offices/${row.id}`,
     endpoint: "offices",
+    requiredPermissions: ["company_structure.read"],
     fields: [
       { label: "Name", name: "name", required: true },
       { label: "Office type", name: "officeType", options: ["MAIN", "BRANCH"].map(toOption), required: true, type: "select" },
@@ -154,6 +187,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "factories",
     deleteEndpoint: (row) => `factories/${row.id}`,
     endpoint: "factories",
+    requiredPermissions: ["company_structure.read"],
     fields: [
       { label: "Name", name: "name", required: true },
       { label: "Address", name: "address" },
@@ -175,6 +209,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "warehouses",
     deleteEndpoint: (row) => `warehouses/${row.id}`,
     endpoint: "warehouses",
+    requiredPermissions: ["company_structure.read"],
     fields: [
       { label: "Office", name: "officeId", reference: officeReference, type: "number" },
       { label: "Factory", name: "factoryId", reference: factoryReference, type: "number" },
@@ -200,9 +235,12 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "customers",
     deleteEndpoint: (row) => `customers/${row.id}`,
     endpoint: "customers",
+    formContextEndpoint: "customers/new-context",
+    requiredPermissions: ["customers.read"],
     fields: [
-      { label: "Office", name: "officeId", reference: officeReference, required: true, type: "number" },
-      { label: "Sales rep", name: "salesRepId", reference: salesRepReference, type: "number" },
+      { label: "Office", loadOptions: false, name: "officeId", reference: officeReference, required: true, type: "number" },
+      { label: "Sales rep", loadOptions: false, name: "salesRepId", reference: salesRepReference, type: "number" },
+      { label: "Route", loadOptions: false, name: "routeId", reference: routeReference, required: true, type: "number" },
       { createOnly: true, label: "Customer type", name: "customerType", options: ["BUSINESS", "INDIVIDUAL"].map(toOption), required: true, type: "select" },
       { label: "Display name", name: "displayName", required: true },
       { label: "Registration number", name: "registrationNumber" },
@@ -212,9 +250,6 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { label: "Telephone", name: "telephone" },
       { label: "Contact person", name: "contactPerson" },
       { label: "Email", name: "email" },
-      { label: "Latitude", name: "latitude", type: "number" },
-      { label: "Longitude", name: "longitude", type: "number" },
-      { label: "Geo accuracy meters", name: "geoAccuracyMeters", type: "number" },
       { label: "Status", name: "status", options: statusOptions, type: "select" }
     ],
     title: "Customers",
@@ -232,6 +267,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { label: "Requested", path: "createdAt" }
     ],
     endpoint: "customer-change-requests",
+    requiredPermissions: ["customers.approve_change"],
     title: "Customer Approval Requests"
   },
   productGroups: {
@@ -243,6 +279,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "product-groups",
     deleteEndpoint: (row) => `product-groups/${row.id}`,
     endpoint: "product-groups",
+    requiredPermissions: ["product_catalogue.read"],
     fields: [
       { label: "Name", name: "name", required: true },
       { label: "Description", name: "description" },
@@ -261,7 +298,9 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     ],
     createEndpoint: "products",
     deleteEndpoint: (row) => `products/${row.id}`,
+    detailEndpoint: (row) => `products/${row.id}`,
     endpoint: "products",
+    requiredPermissions: ["product_catalogue.read"],
     fields: [
       { label: "Product group", name: "productGroupId", reference: productGroupReference, required: true, type: "number" },
       { label: "Name", name: "name", required: true },
@@ -285,6 +324,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "price-lists",
     deleteEndpoint: (row) => `price-lists/${row.id}`,
     endpoint: "price-lists",
+    requiredPermissions: ["price_lists.read"],
     fields: [
       { label: "Name", name: "name", required: true },
       { label: "Effective from", name: "effectiveFrom", required: true, type: "datetime" },
@@ -304,6 +344,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     ],
     createEndpoint: "inventory/stocks/adjust",
     endpoint: "inventory/stocks",
+    requiredPermissions: ["inventory.read"],
     fields: [
       { label: "Warehouse", name: "warehouseId", reference: warehouseReference, required: true, type: "number" },
       { createOnly: true, label: "Product", name: "productId", reference: productReference, required: true, type: "number" },
@@ -323,6 +364,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "routes",
     deleteEndpoint: (row) => `routes/${row.id}`,
     endpoint: "routes",
+    requiredPermissions: ["routes.read"],
     fields: [
       { createOnly: true, label: "Office", name: "officeId", reference: officeReference, required: true, type: "number" },
       { label: "Name", name: "name", required: true },
@@ -334,10 +376,26 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
   },
   orders: {
     actions: [
-      { endpoint: (row) => `orders/${row.id}/approve`, label: "Approve" },
-      { endpoint: (row) => `orders/${row.id}/reserve-stock`, label: "Reserve" },
-      { endpoint: (row) => `orders/${row.id}/cancel`, label: "Cancel" }
+      {
+        disabled: (row) => row.status !== "SUBMITTED",
+        endpoint: (row) => `orders/${row.id}/approve`,
+        label: "Approve",
+        visible: (_, user) => isSuperAdmin(user)
+      },
+      {
+        disabled: (row) => row.status !== "APPROVED",
+        endpoint: (row) => `orders/${row.id}/reserve-stock`,
+        label: "Reserve",
+        visible: (_, user) => isSuperAdmin(user)
+      },
+      {
+        disabled: (row) => isTerminalOrder(row),
+        endpoint: (row) => `orders/${row.id}/cancel`,
+        label: "Cancel",
+        visible: (_, user) => isSuperAdmin(user) || isSalesRepOnly(user)
+      }
     ],
+    canEdit: (user) => !isSalesRepOnly(user),
     columns: [
       { label: "Number", path: "orderNumber" },
       { label: "Customer", path: "customer.displayName" },
@@ -347,14 +405,11 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     ],
     createEndpoint: "orders",
     endpoint: "orders",
+    requiredPermissions: ["orders.read"],
     fields: [
       { createOnly: true, label: "Customer", name: "customerId", reference: customerReference, required: true, type: "number" },
-      { createOnly: true, label: "Sales rep", name: "salesRepId", reference: salesRepReference, type: "number" },
-      { createOnly: true, label: "Office", name: "officeId", reference: officeReference, required: true, type: "number" },
-      { label: "Route", name: "routeId", reference: routeReference, type: "number" },
-      { label: "Warehouse", name: "warehouseId", reference: warehouseReference, type: "number" },
       { createOnly: true, label: "Order date", name: "orderDate", required: true, type: "datetime" },
-      { helperText: "Example: [{\"productId\":1,\"quantity\":12,\"unitPrice\":50}]", label: "Items", name: "items", required: true, type: "json" },
+      { label: "Items", name: "items", required: true, type: "orderItems" },
       notesField
     ],
     title: "Orders",
@@ -379,6 +434,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     ],
     createEndpoint: "deliveries",
     endpoint: "deliveries",
+    requiredPermissions: ["delivery.read"],
     fields: [
       { label: "Order", name: "orderId", reference: orderReference, required: true, type: "number" },
       { label: "Delivery date", name: "deliveryDate", required: true, type: "datetime" },
@@ -399,8 +455,9 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     ],
     createEndpoint: "sales-invoices/from-order",
     endpoint: "sales-invoices",
+    requiredPermissions: ["sales_invoices.read"],
     fields: [
-      { label: "Order", name: "orderId", reference: orderReference, required: true, type: "number" },
+      { label: "Order", name: "orderId", reference: eligibleInvoiceOrderReference, required: true, type: "number" },
       { label: "Invoice date", name: "invoiceDate", type: "datetime" },
       { label: "Due date", name: "dueDate", type: "datetime" },
       notesField
@@ -418,6 +475,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     ],
     createEndpoint: "payments",
     endpoint: "payments",
+    requiredPermissions: ["payments.read"],
     fields: [
       { label: "Customer", name: "customerId", reference: customerReference, required: true, type: "number" },
       { label: "Sales invoice", name: "salesInvoiceId", reference: salesInvoiceReference, type: "number" },
@@ -443,6 +501,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { label: "Status", path: "status" }
     ],
     endpoint: "cheques",
+    requiredPermissions: ["cheques.read"],
     title: "Cheque Management"
   },
   returns: {
@@ -460,6 +519,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     ],
     createEndpoint: "returns",
     endpoint: "returns",
+    requiredPermissions: ["returns.read"],
     fields: [
       { label: "Customer", name: "customerId", reference: customerReference, required: true, type: "number" },
       { label: "Order", name: "orderId", reference: orderReference, type: "number" },
@@ -482,6 +542,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "sales-targets",
     deleteEndpoint: (row) => `sales-targets/${row.id}`,
     endpoint: "sales-targets",
+    requiredPermissions: ["sales_targets.read"],
     fields: [
       { createOnly: true, label: "Sales rep", name: "salesRepId", reference: salesRepReference, required: true, type: "number" },
       { createOnly: true, label: "Product", name: "productId", reference: productReference, type: "number" },
@@ -512,6 +573,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     ],
     createEndpoint: "warehouse-transfers",
     endpoint: "warehouse-transfers",
+    requiredPermissions: ["warehouse_transfers.read"],
     fields: [
       { label: "From warehouse", name: "fromWarehouseId", reference: warehouseReference, required: true, type: "number" },
       { label: "To warehouse", name: "toWarehouseId", reference: warehouseReference, required: true, type: "number" },
@@ -544,11 +606,15 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     ],
     createEndpoint: "customer-visits",
     endpoint: "customer-visits",
+    formContextEndpoint: "customer-visits/new-context",
+    formContextSalesRepReference: salesRepReference,
+    requiredPermissions: ["customer_visits.read"],
     fields: [
       { label: "Customer", name: "customerId", reference: customerReference, required: true, type: "number" },
-      { label: "Sales rep", name: "salesRepId", reference: salesRepReference, type: "number" },
+      { label: "Sales rep", loadOptions: false, name: "salesRepId", reference: salesRepReference, required: true, type: "number" },
       { label: "Visit type", name: "visitType", options: ["SALES", "COLLECTION", "COMPLAINT", "DELIVERY_FOLLOW_UP"].map(toOption), required: true, type: "select" },
       { label: "Planned at", name: "plannedAt", type: "datetime" },
+      { label: "Visited date", name: "visitedAt", type: "datetime" },
       notesField
     ],
     title: "Customer Visits"
@@ -564,6 +630,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "attachments",
     deleteEndpoint: (row) => `attachments/${row.id}`,
     endpoint: "attachments",
+    requiredPermissions: ["attachments.read"],
     fields: [
       { label: "Owner type", name: "ownerType", options: ["CUSTOMER", "ORDER", "DELIVERY", "SALES_INVOICE", "PAYMENT", "CHEQUE", "RETURN", "CUSTOMER_VISIT", "PRODUCT", "WAREHOUSE_TRANSFER"].map(toOption), required: true, type: "select" },
       { label: "Owner ID", name: "ownerId", required: true, type: "number" },
@@ -586,6 +653,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     ],
     createEndpoint: "notifications",
     endpoint: "notifications",
+    requiredPermissions: ["notifications.read"],
     fields: [
       { label: "User", name: "userId", reference: userReference, type: "number" },
       { label: "Title", name: "title", required: true },
@@ -606,6 +674,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { label: "Created", path: "createdAt" }
     ],
     endpoint: "audit-logs",
+    requiredPermissions: ["audit.read"],
     title: "Audit Logs"
   },
   discountClasses: {
@@ -618,6 +687,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "discounts/classes",
     deleteEndpoint: (row) => `discounts/classes/${row.id}`,
     endpoint: "discounts/classes",
+    requiredPermissions: ["discounts.read"],
     fields: [
       { createOnly: true, label: "Code", name: "code", required: true },
       { label: "Name", name: "name", required: true },
@@ -638,6 +708,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "discounts/seasonal",
     deleteEndpoint: (row) => `discounts/seasonal/${row.id}`,
     endpoint: "discounts/seasonal",
+    requiredPermissions: ["discounts.read"],
     fields: [
       { createOnly: true, label: "Product", name: "productId", reference: productReference, required: true, type: "number" },
       { label: "Name", name: "name", required: true },
@@ -661,6 +732,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "discounts/free-item-offers",
     deleteEndpoint: (row) => `discounts/free-item-offers/${row.id}`,
     endpoint: "discounts/free-item-offers",
+    requiredPermissions: ["discounts.read"],
     fields: [
       { createOnly: true, label: "Product", name: "productId", reference: productReference, required: true, type: "number" },
       { label: "Name", name: "name", required: true },
@@ -686,6 +758,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     ],
     createEndpoint: "discounts/additional-bill/request",
     endpoint: "discounts/additional-bill/requests",
+    requiredPermissions: ["discounts.read"],
     fields: [
       { label: "Customer", name: "customerId", reference: customerReference, required: true, type: "number" },
       { label: "Discount percentage", name: "discountPercentage", required: true, type: "number" },
@@ -707,6 +780,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     ],
     createEndpoint: "credit-control/override-requests",
     endpoint: "credit-control/override-requests",
+    requiredPermissions: ["credit_control.read"],
     fields: [
       { label: "Customer", name: "customerId", reference: customerReference, required: true, type: "number" },
       { label: "Order", name: "orderId", reference: orderReference, type: "number" },
@@ -726,6 +800,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     createEndpoint: "commissions/rules",
     deleteEndpoint: (row) => `commissions/rules/${row.id}`,
     endpoint: "commissions/rules",
+    requiredPermissions: ["commissions.read"],
     fields: [
       { createOnly: true, label: "Code", name: "code", required: true },
       { label: "Name", name: "name", required: true },
@@ -756,6 +831,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     ],
     createEndpoint: "commissions/runs/calculate",
     endpoint: "commissions/runs",
+    requiredPermissions: ["commissions.read"],
     fields: [
       { label: "Sales rep", name: "salesRepId", reference: salesRepReference, required: true, type: "number" },
       { label: "Year", name: "periodYear", required: true, type: "number" },

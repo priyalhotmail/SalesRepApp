@@ -38,8 +38,11 @@ export class CustomersController {
 
   @Get("customers")
   @Permissions("customers.read")
-  list(@Query() query: CustomerQueryDto) {
-    return this.service.list(query);
+  list(
+    @Query() query: CustomerQueryDto,
+    @CurrentUser() actor: AuthenticatedUser
+  ) {
+    return this.service.list(query, actor);
   }
 
   @Post("customers")
@@ -52,6 +55,12 @@ export class CustomersController {
     return this.service.create(dto, buildRequestContext(actor, request));
   }
 
+  @Get("customers/new-context")
+  @Permissions("customers.create")
+  newCustomerContext(@CurrentUser() actor: AuthenticatedUser) {
+    return this.service.getNewCustomerContext(actor);
+  }
+
   @Get("customers/nearby")
   @Permissions("customers.read")
   findNearby(@Query() query: NearbyCustomerQueryDto) {
@@ -60,8 +69,11 @@ export class CustomersController {
 
   @Get("customers/:id")
   @Permissions("customers.read")
-  findById(@Param("id", ParseIntPipe) id: number) {
-    return this.service.findById(id);
+  findById(
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentUser() actor: AuthenticatedUser
+  ) {
+    return this.service.findById(id, actor);
   }
 
   @Patch("customers/:id")

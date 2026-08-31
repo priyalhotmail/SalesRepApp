@@ -61,6 +61,10 @@ export class CreateCustomerVisitDto {
   plannedAt?: string;
 
   @IsOptional()
+  @IsDateString()
+  visitedAt?: string;
+
+  @IsOptional()
   @IsString()
   @MaxLength(500)
   notes?: string;

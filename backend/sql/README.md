@@ -65,3 +65,9 @@ Phase 8 creates system configuration storage and seeds dashboard/report/config p
 SOURCE backend/sql/014_phase8_reports_dashboard_config_schema.sql;
 SOURCE backend/sql/015_phase8_seed_reports_dashboard_config.sql;
 ```
+
+Phase 9 adds Sales Rep primary warehouse assignment and primary active customer route support:
+
+```sql
+SOURCE backend/sql/016_sales_rep_warehouse_primary_route.sql;
+```

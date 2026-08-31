@@ -31,8 +31,17 @@ export class CustomerVisitsController {
 
   @Get()
   @Permissions("customer_visits.read")
-  list(@Query() query: CustomerVisitQueryDto) {
-    return this.service.list(query);
+  list(
+    @Query() query: CustomerVisitQueryDto,
+    @CurrentUser() actor: AuthenticatedUser
+  ) {
+    return this.service.list(query, actor);
+  }
+
+  @Get("new-context")
+  @Permissions("customer_visits.create")
+  newVisitContext(@CurrentUser() actor: AuthenticatedUser) {
+    return this.service.getNewVisitContext(actor);
   }
 
   @Post()

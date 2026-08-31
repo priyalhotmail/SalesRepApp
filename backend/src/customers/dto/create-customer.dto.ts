@@ -20,8 +20,14 @@ export class CreateCustomerDto {
   officeId!: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   salesRepId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  routeId?: number;
 
   @IsOptional()
   @IsString()
