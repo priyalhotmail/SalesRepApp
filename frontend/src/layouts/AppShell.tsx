@@ -49,6 +49,7 @@ const navigationItems = [
   { icon: <LocalShippingIcon />, label: "Routes", path: "/module/routes", permissions: ["routes.read"] },
   { icon: <ReceiptIcon />, label: "Orders", path: "/module/orders", permissions: ["orders.read"] },
   { icon: <LocalShippingIcon />, label: "Delivery", path: "/module/deliveries", permissions: ["delivery.read"] },
+  { icon: <LocalShippingIcon />, label: "Delivery Plans", path: "/module/deliveryPlans", permissions: ["delivery.read"] },
   { icon: <ReceiptIcon />, label: "Sales Invoices", path: "/module/salesInvoices", permissions: ["sales_invoices.read"] },
   { icon: <ReceiptIcon />, label: "Payments", path: "/module/payments", permissions: ["payments.read"] },
   { icon: <ReceiptIcon />, label: "Cheques", path: "/module/cheques", permissions: ["cheques.read"] },

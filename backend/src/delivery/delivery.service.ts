@@ -12,8 +12,9 @@ import { getPagination, toPaginatedResult } from "../common/utils/pagination.uti
 import { PrismaService } from "../prisma/prisma.service";
 import {
   ConfirmDeliveryDto,
+  CreateDeliveryPlanDto,
   CreateDeliveryDto,
-  DeliveryNoteDto,
+  DeliveryNoteDto, DeliveryPlanQueryDto,
   DeliveryQueryDto
 } from "./dto/delivery.dto";
 
@@ -69,6 +70,28 @@ export class DeliveryService {
     return toPaginatedResult(data, total, page, limit);
   }
 
+  async listDrivers() {
+    return this.prisma.employee.findMany({
+      orderBy: { user: { displayName: "asc" } },
+      select: { code: true, id: true, user: { select: { displayName: true, email: true } } },
+      where: { category: "DRIVER", status: "ACTIVE", user: { status: "ACTIVE" } }
+    });
+  }
+
+  async loadingSummary(orderIds?: string) {
+    const ids = (orderIds ?? "").split(",").map(Number).filter(Number.isInteger);
+    if (ids.length === 0) return [];
+    const orders = await this.prisma.order.findMany({ include: { items: { include: { product: true } } }, where: { id: { in: ids } } });
+    const totals = new Map<number, { freeQuantity: number; itemName: string; productId: number; quantity: number }>();
+    orders.flatMap((order) => order.items).forEach((item) => {
+      const current = totals.get(item.productId) ?? { freeQuantity: 0, itemName: item.product.name || "Item description unavailable", productId: item.productId, quantity: 0 };
+      current.quantity += Number(item.quantity);
+      current.freeQuantity += Number(item.freeQuantity);
+      totals.set(item.productId, current);
+    });
+    return Array.from(totals.values()).map((item) => ({ ...item, totalQuantity: item.quantity + item.freeQuantity }));
+  }
+
   async findDeliveryById(id: number) {
     const delivery = await this.prisma.delivery.findUnique({
       include: deliveryInclude,
@@ -80,6 +103,50 @@ export class DeliveryService {
     }
 
     return delivery;
+  }
+
+  async listPlans(query: DeliveryPlanQueryDto) {
+    const { limit, page, skip, take } = getPagination(query);
+    const where: Prisma.DeliveryPlanWhereInput = { routeId: query.routeId };
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.deliveryPlan.findMany({ include: { driver: { include: { user: true } }, orders: { include: { order: { include: { customer: true, items: { include: { product: true } } } } } }, route: true, warehouse: true }, orderBy: { plannedDate: "desc" }, skip, take, where }),
+      this.prisma.deliveryPlan.count({ where })
+    ]);
+    return toPaginatedResult(data, total, page, limit);
+  }
+
+  async eligiblePlanOrders(routeId?: number) {
+    if (!routeId) return [];
+    const orders = await this.prisma.order.findMany({
+      include: { customer: true, items: { include: { product: true } }, warehouse: true },
+      where: { deletedAt: null, routeId, status: "RESERVED", delivery: null, deliveryPlanOrders: { none: { deliveryPlan: { status: { not: "CANCELLED" } } } } }, orderBy: { customer: { displayName: "asc" } }
+    });
+    return orders;
+  }
+
+  async createPlan(dto: CreateDeliveryPlanDto, context: RequestContext) {
+    const [route, driver, orders] = await Promise.all([
+      this.prisma.route.findFirst({ where: { id: dto.routeId, status: "ACTIVE" } }),
+      this.prisma.employee.findFirst({ include: { user: true }, where: { id: dto.driverId, category: "DRIVER", status: "ACTIVE" } }),
+      this.prisma.order.findMany({ include: { delivery: true }, where: { id: { in: dto.orderIds }, deletedAt: null, routeId: dto.routeId, status: "RESERVED" } })
+    ]);
+    if (!route || !driver?.user || orders.length !== new Set(dto.orderIds).size) throw new BadRequestException("Route, driver, or selected orders are invalid");
+    const warehouseId = orders[0]?.warehouseId;
+    if (!warehouseId || orders.some((order) => order.delivery || !order.warehouseId) || new Set(orders.map((order) => order.warehouseId)).size !== 1) throw new BadRequestException("Selected orders must be reserved and use the same warehouse");
+    const planNumber = `DPL-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${String((await this.prisma.deliveryPlan.count()) + 1).padStart(5, "0")}`;
+    return this.prisma.deliveryPlan.create({ data: { planNumber, routeId: dto.routeId, driverId: dto.driverId, warehouseId, plannedDate: new Date(dto.plannedDate), notes: dto.notes, createdById: context.actor.id, orders: { create: orders.map((order) => ({ orderId: order.id })) } }, include: { driver: { include: { user: true } }, orders: { include: { order: { include: { customer: true, items: { include: { product: true } } } } } }, route: true, warehouse: true } });
+  }
+
+  async confirmLoading(id: number, context: RequestContext) {
+    const plan = await this.prisma.deliveryPlan.findUnique({ include: { driver: { include: { user: true } }, orders: { include: { order: { include: { items: true } } } } }, where: { id } });
+    if (!plan || plan.status !== "PLANNED") throw new BadRequestException("Only planned delivery runs can be confirmed as loaded");
+    return this.prisma.$transaction(async (tx) => {
+      for (const entry of plan.orders) {
+        const order = entry.order;
+        await tx.delivery.create({ data: { deliveryNumber: await this.generateDeliveryNumber(), deliveryPlanId: plan.id, orderId: order.id, customerId: order.customerId, routeId: order.routeId, warehouseId: order.warehouseId!, deliveryDate: plan.plannedDate, driverName: plan.driver.user.displayName, items: { create: order.items.map((item) => ({ orderItemId: item.id, productId: item.productId, orderedQuantity: Number(item.quantity) + Number(item.freeQuantity) })) } } });
+      }
+      return tx.deliveryPlan.update({ data: { status: "LOADED", loadingConfirmedAt: new Date(), loadingConfirmedById: context.actor.id, updatedById: context.actor.id }, where: { id } });
+    });
   }
 
   async createDelivery(dto: CreateDeliveryDto, context: RequestContext) {

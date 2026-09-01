@@ -89,3 +89,27 @@ Phase 11 adds employee operational categories and employment types:
 ```sql
 SOURCE backend/sql/021_employee_category_and_employment_type.sql;
 ```
+
+Phase 12 adds route driver assignment and persistent delivery-plan tables:
+
+```sql
+SOURCE backend/sql/022_route_drivers_and_delivery_plans.sql;
+```
+
+Run this corrective permission sync for Delivery Plan access on an existing database:
+
+```sql
+SOURCE backend/sql/023_delivery_plan_role_permission_sync.sql;
+```
+
+Run this permission sync for Branch Authorized route access:
+
+```sql
+SOURCE backend/sql/024_branch_route_read_permission.sql;
+```
+
+If a Branch Authorized User still cannot open Delivery Plans or Routes, run this self-contained access repair:
+
+```sql
+SOURCE backend/sql/025_branch_delivery_and_routes_access_repair.sql;
+```

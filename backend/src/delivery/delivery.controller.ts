@@ -18,7 +18,11 @@ import { AuthenticatedUser } from "../common/types/authenticated-user.type";
 import { buildRequestContext } from "../common/types/request-context.type";
 import {
   ConfirmDeliveryDto,
+  CreateDeliveryPlanDto,
   CreateDeliveryDto,
+  DeliveryPlanEligibleOrdersQueryDto,
+  DeliveryPlanQueryDto,
+  DeliveryPlanSummaryQueryDto,
   DeliveryNoteDto,
   DeliveryQueryDto
 } from "./dto/delivery.dto";
@@ -28,6 +32,13 @@ import { DeliveryService } from "./delivery.service";
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class DeliveryController {
   constructor(private readonly service: DeliveryService) {}
+
+  @Get("drivers") @Permissions("delivery.create") listDrivers() { return this.service.listDrivers(); }
+  @Get("plans/loading-summary") @Permissions("delivery.create") loadingSummary(@Query("orderIds") orderIds?: string) { return this.service.loadingSummary(orderIds); }
+  @Get("plans") @Permissions("delivery.read") listPlans(@Query() query: DeliveryPlanQueryDto) { return this.service.listPlans(query); }
+  @Get("plans/eligible-orders") @Permissions("delivery.create") eligiblePlanOrders(@Query() query: DeliveryPlanEligibleOrdersQueryDto) { return this.service.eligiblePlanOrders(query.routeId); }
+  @Post("plans") @Permissions("delivery.create") createPlan(@Body() dto: CreateDeliveryPlanDto, @CurrentUser() actor: AuthenticatedUser, @Req() request: Request) { return this.service.createPlan(dto, buildRequestContext(actor, request)); }
+  @Post("plans/:id/confirm-loading") @Permissions("delivery.update") confirmLoading(@Param("id", ParseIntPipe) id: number, @CurrentUser() actor: AuthenticatedUser, @Req() request: Request) { return this.service.confirmLoading(id, buildRequestContext(actor, request)); }
 
   @Get()
   @Permissions("delivery.read")

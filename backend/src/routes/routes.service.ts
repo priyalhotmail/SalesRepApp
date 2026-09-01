@@ -37,8 +37,11 @@ export class RoutesService {
     const salesRepContext = actor && isSalesRepScopedActor(actor)
       ? await this.getSalesRepContext(actor.id)
       : undefined;
+    const branchOfficeId = actor?.roles.includes("BRANCH_AUTHORIZED_USER")
+      ? await this.getBranchOfficeId(actor.id)
+      : undefined;
     const where: Prisma.RouteWhereInput = {
-      officeId: salesRepContext?.officeId ?? query.officeId,
+      officeId: salesRepContext?.officeId ?? branchOfficeId ?? query.officeId,
       status: query.status ?? { not: "DELETED" }
     };
 
@@ -59,6 +62,7 @@ export class RoutesService {
             where: { status: "ACTIVE" }
           },
           office: true,
+          driver: { include: { user: true } },
           schedules: true
         },
         orderBy: { name: "asc" },
@@ -76,6 +80,9 @@ export class RoutesService {
     const salesRepContext = actor && isSalesRepScopedActor(actor)
       ? await this.getSalesRepContext(actor.id)
       : undefined;
+    const branchOfficeId = actor?.roles.includes("BRANCH_AUTHORIZED_USER")
+      ? await this.getBranchOfficeId(actor.id)
+      : undefined;
     const route = await this.prisma.route.findFirst({
       include: {
         customers: {
@@ -83,11 +90,12 @@ export class RoutesService {
           where: { status: "ACTIVE" }
         },
         office: true,
+        driver: { include: { user: true } },
         schedules: true
       },
       where: {
         id,
-        officeId: salesRepContext?.officeId,
+        officeId: salesRepContext?.officeId ?? branchOfficeId,
         status: { not: "DELETED" }
       }
     });
@@ -101,6 +109,7 @@ export class RoutesService {
 
   async createRoute(dto: CreateRouteDto, context: RequestContext) {
     await this.ensureOffice(dto.officeId);
+    if (dto.driverId) await this.ensureDriver(dto.driverId);
     const code = await this.resolveUniqueRouteCode(dto.code);
 
     const route = await this.prisma.route.create({
@@ -108,6 +117,7 @@ export class RoutesService {
         code,
         createdById: context.actor.id,
         description: dto.description,
+        driverId: dto.driverId,
         name: dto.name.trim(),
         officeId: dto.officeId
       }
@@ -128,9 +138,11 @@ export class RoutesService {
 
   async updateRoute(id: number, dto: UpdateRouteDto, context: RequestContext) {
     const route = await this.findActiveRoute(id);
+    if (dto.driverId) await this.ensureDriver(dto.driverId);
     const updatedRoute = await this.prisma.route.update({
       data: {
         description: dto.description,
+        driverId: dto.driverId,
         name: dto.name?.trim(),
         status: dto.status,
         updatedById: context.actor.id
@@ -330,6 +342,16 @@ export class RoutesService {
     }
   }
 
+  private async ensureDriver(driverId: number) {
+    const driver = await this.prisma.employee.findFirst({
+      include: { user: true },
+      where: { id: driverId, category: "DRIVER", status: "ACTIVE" }
+    });
+    if (!driver?.user || driver.user.status !== "ACTIVE") {
+      throw new BadRequestException("Driver must be an active Driver employee with an active user account");
+    }
+  }
+
   private async ensureCustomers(customerIds: number[]) {
     if (customerIds.length === 0) {
       return;
@@ -383,6 +405,17 @@ export class RoutesService {
     }
 
     return salesRep;
+  }
+
+  private async getBranchOfficeId(userId: number) {
+    const employee = await this.prisma.employee.findFirst({
+      where: { status: "ACTIVE", userId }
+    });
+    const officeId = employee?.branchId ?? employee?.officeId;
+    if (!officeId) {
+      throw new BadRequestException("Branch Authorized User must be linked to an active employee branch");
+    }
+    return officeId;
   }
 
   private async ensureUniqueRouteCode(code: string) {

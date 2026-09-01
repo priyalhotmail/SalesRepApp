@@ -10,6 +10,10 @@ export class EmployeeQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(statuses)
   status?: (typeof statuses)[number];
+
+  @IsOptional()
+  @IsIn(categories)
+  category?: (typeof categories)[number];
 }
 
 export class CreateEmployeeDto {

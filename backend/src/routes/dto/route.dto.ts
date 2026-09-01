@@ -40,6 +40,8 @@ export class CreateRouteDto {
   @IsInt()
   officeId!: number;
 
+  @IsOptional() @Type(() => Number) @IsInt() driverId?: number;
+
   @IsOptional()
   @IsString()
   @Matches(/^[A-Z0-9-]+$/)
@@ -58,6 +60,7 @@ export class CreateRouteDto {
 }
 
 export class UpdateRouteDto {
+  @IsOptional() @Type(() => Number) @IsInt() driverId?: number;
   @IsOptional()
   @IsString()
   @MinLength(2)

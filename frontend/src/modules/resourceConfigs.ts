@@ -96,9 +96,24 @@ const warehouseReference = {
   labelPath: "name",
   secondaryLabelPath: "code"
 };
+const eligibleDeliveryPlanOrderReference = {
+  endpoint: "deliveries/plans/eligible-orders",
+  labelPath: "orderNumber",
+  secondaryLabelPath: "customer.displayName"
+};
+const driverReference = {
+  endpoint: "deliveries/drivers",
+  labelPath: "user.displayName",
+  query: { category: "DRIVER", status: "ACTIVE" },
+  secondaryLabelPath: "code"
+};
 
 function isSuperAdmin(user: AuthUser | null) {
   return user?.roles?.includes("SUPER_ADMIN") ?? false;
+}
+
+function hasPermission(user: AuthUser | null, permission: string) {
+  return user?.permissions?.includes(permission) ?? false;
 }
 
 function isSalesRepOnly(user: AuthUser | null) {
@@ -121,6 +136,13 @@ function orderMessage(row: ResourceRecord, action: "approve" | "reserve") {
   return action === "approve"
     ? `Do you want to approve ${salesRep}'s order ${row.orderNumber} for ${customer}, total amount ${total}?`
     : `Do you want to reserve stock for ${salesRep}'s order ${row.orderNumber} for ${customer}, total amount ${total}?`;
+}
+
+function formatPlanDate(value: unknown) {
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime())
+    ? ""
+    : `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
 }
 
 export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>> = {
@@ -152,6 +174,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { label: "Code", path: "code" },
       { label: "Name", path: "name" },
       { label: "Office", path: "office.name" },
+      { label: "Driver", path: "driver.user.displayName" },
       { label: "Phone", path: "telephone" },
       { label: "Status", path: "status" }
     ],
@@ -416,6 +439,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     requiredPermissions: ["routes.read"],
     fields: [
       { createOnly: true, label: "Office", name: "officeId", reference: officeReference, required: true, type: "number" },
+      { label: "Driver", name: "driverId", reference: driverReference, type: "number" },
       { label: "Name", name: "name", required: true },
       { label: "Description", name: "description" },
       { label: "Status", name: "status", options: statusOptions, type: "select" }
@@ -430,14 +454,14 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
         disabled: (row) => row.status !== "SUBMITTED",
         endpoint: (row) => `orders/${row.id}/approve`,
         label: "Approve",
-        visible: (_, user) => isSuperAdmin(user)
+        visible: (_, user) => hasPermission(user, "orders.approve")
       },
       {
         bodyMessage: (row) => orderMessage(row, "reserve"),
         disabled: (row) => row.status !== "APPROVED",
         endpoint: (row) => `orders/${row.id}/reserve-stock`,
         label: "Reserve",
-        visible: (_, user) => isSuperAdmin(user)
+        visible: (_, user) => hasPermission(user, "orders.reserve_stock")
       },
       {
         disabled: (row) => isTerminalOrder(row),
@@ -468,13 +492,13 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
   },
   deliveries: {
     actions: [
-      { endpoint: (row) => `deliveries/${row.id}/dispatch`, label: "Dispatch" },
+      { disabled: (row) => row.status !== "PLANNED", endpoint: (row) => `deliveries/${row.id}/dispatch`, label: "Dispatch", visible: (_, user) => hasPermission(user, "delivery.update") },
       { bodyFields: [
         { label: "Received by", name: "receivedBy" },
         { label: "Proof notes", name: "proofNotes" },
         { label: "Items", name: "items", required: true, type: "deliveryItems" }
-      ], endpoint: (row) => `deliveries/${row.id}/confirm`, label: "Confirm" },
-      { endpoint: (row) => `deliveries/${row.id}/cancel`, label: "Cancel" }
+      ], disabled: (row) => row.status !== "DISPATCHED", endpoint: (row) => `deliveries/${row.id}/confirm`, label: "Confirm", visible: (_, user) => hasPermission(user, "delivery.update") },
+      { disabled: (row) => !["PLANNED", "DISPATCHED"].includes(String(row.status)), endpoint: (row) => `deliveries/${row.id}/cancel`, label: "Cancel", visible: (_, user) => hasPermission(user, "delivery.update") }
     ],
     columns: [
       { label: "Number", path: "deliveryNumber" },
@@ -484,6 +508,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { label: "Status", path: "status" }
     ],
     createEndpoint: "deliveries",
+    canCreate: (user) => hasPermission(user, "delivery.create"),
     endpoint: "deliveries",
     requiredPermissions: ["delivery.read"],
     fields: [
@@ -494,6 +519,33 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       notesField
     ],
     title: "Delivery Screen"
+  },
+  deliveryPlans: {
+    actions: [
+      { bodyFields: [{ label: "Loading summary", name: "orders", type: "deliveryPlanSummary" }], endpoint: () => "", label: "View Loading Summary", previewOnly: true },
+      { bodyMessage: (row) => `${(row.route as ResourceRecord | undefined)?.name ?? "Route"} - ${formatPlanDate(row.plannedDate)} orders are loaded successfully.`, disabled: (row) => row.status !== "PLANNED", endpoint: (row) => `deliveries/plans/${row.id}/confirm-loading`, label: "Confirm Loading", visible: (_, user) => hasPermission(user, "delivery.update") }
+    ],
+    columns: [
+      { label: "Plan", path: "planNumber" },
+      { label: "Route", path: "route.name" },
+      { label: "Driver", path: "driver.user.displayName" },
+      { label: "Warehouse", path: "warehouse.name" },
+      { label: "Date", path: "plannedDate" },
+      { label: "Status", path: "status" }
+    ],
+    createEndpoint: "deliveries/plans",
+    canCreate: (user) => hasPermission(user, "delivery.create"),
+    endpoint: "deliveries/plans",
+    requiredPermissions: ["delivery.read"],
+    fields: [
+      { label: "Route", name: "routeId", reference: routeReference, required: true, type: "number" },
+      { label: "Driver", name: "driverId", reference: driverReference, required: true, type: "number" },
+      { defaultValue: "now", label: "Delivery date", name: "plannedDate", required: true, type: "datetime" },
+      { helperText: "Select a route first. Only its stock-reserved orders are listed.", label: "Orders", name: "orderIds", reference: eligibleDeliveryPlanOrderReference, referenceQuery: (values) => ({ routeId: Number(values.routeId) || undefined }), required: true, type: "multiReference" },
+      { label: "Loading summary", name: "orderIds", type: "deliveryPlanSummary" },
+      notesField
+    ],
+    title: "Delivery Plans"
   },
   salesInvoices: {
     actions: [{ endpoint: (row) => `sales-invoices/${row.id}/cancel`, label: "Cancel" }],

@@ -85,8 +85,9 @@ export type ResourceField = {
   name: string;
   options?: ReferenceOption[];
   reference?: ResourceReference;
+  referenceQuery?: (values: Record<string, unknown>) => Record<string, number | string | boolean | undefined>;
   required?: boolean;
-  type?: "checkbox" | "date" | "datetime" | "deliveryItems" | "json" | "multiReference" | "number" | "orderItems" | "select" | "text";
+  type?: "checkbox" | "date" | "datetime" | "deliveryItems" | "deliveryPlanSummary" | "json" | "multiReference" | "number" | "orderItems" | "select" | "text";
   visible?: (user: AuthUser | null) => boolean;
 };
 
@@ -97,12 +98,14 @@ export type ResourceAction<T> = {
   endpoint: (record: T) => string;
   label: string;
   method?: "POST" | "PATCH" | "PUT" | "DELETE";
+  previewOnly?: boolean;
   visible?: (record: T, user: AuthUser | null) => boolean;
   variant?: "outlined" | "contained";
 };
 
 export type ResourcePageConfig<T extends Record<string, unknown>> = {
   actions?: ResourceAction<T>[];
+  canCreate?: (user: AuthUser | null) => boolean;
   canEdit?: (user: AuthUser | null) => boolean;
   columns: DataColumn<T>[];
   createEndpoint?: string | ((payload: Record<string, unknown>) => string);
@@ -162,7 +165,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
   const [formContext, setFormContext] = useState<CustomerFormContext | null>(null);
 
   const getRowId = config.getRowId ?? ((record: T) => record.id as number);
-  const canCreate = Boolean(config.fields?.length && config.createEndpoint);
+  const canCreate = Boolean(config.fields?.length && config.createEndpoint) && (config.canCreate?.(user) ?? true);
   const canEdit = Boolean(config.fields?.length && config.updateEndpoint) && (config.canEdit?.(user) ?? true);
   const canDelete = Boolean(config.deleteEndpoint);
   const referenceFields = useMemo(() => collectReferenceFields(config), [config]);
@@ -210,7 +213,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
         referenceFields.map(async (field) => {
           const reference = field.reference!;
           const response = await apiRequest<unknown>(reference.endpoint, {
-            query: { limit: 100, ...reference.query }
+              query: { limit: 100, ...reference.query, ...field.referenceQuery?.(formValues) }
           });
           const rows = normalizeListResponse<Record<string, unknown>>(response).data;
           return [
@@ -223,7 +226,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
     } catch (currentError) {
       setError(getErrorMessage(currentError));
     }
-  }, [referenceFields]);
+  }, [formValues, referenceFields]);
 
   useEffect(() => {
     void loadReferenceOptions();
@@ -432,6 +435,10 @@ export function ResourcePage<T extends Record<string, unknown>>({
     setFormError(null);
     try {
       const bodyFields = actionConfig.bodyFields ?? [];
+      if (actionConfig.previewOnly) {
+        setActionConfig(null);
+        return;
+      }
       await apiRequest(actionConfig.endpoint(actionRecord), {
         body: buildPayload(bodyFields, actionValues, "create"),
         method: actionConfig.method ?? "POST"
@@ -556,6 +563,8 @@ export function ResourcePage<T extends Record<string, unknown>>({
                   setFormValues((current) =>
                     field.name === "officeId"
                       ? { ...current, officeId: value, routeId: "", salesRepId: "" }
+                      : field.name === "routeId"
+                        ? { ...current, routeId: value, orderIds: [] }
                       : { ...current, [field.name]: value }
                   )
                 }
@@ -609,10 +618,14 @@ export function ResourcePage<T extends Record<string, unknown>>({
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setActionConfig(null)}>Cancel</Button>
-          <Button disabled={isSaving} onClick={() => void runAction()} variant="contained">
-            Submit
-          </Button>
+          {actionConfig?.previewOnly ? (
+            <Button onClick={() => setActionConfig(null)} variant="contained">OK</Button>
+          ) : (
+            <>
+              <Button onClick={() => setActionConfig(null)}>Cancel</Button>
+              <Button disabled={isSaving} onClick={() => void runAction()} variant="contained">Submit</Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
     </Stack>
@@ -694,6 +707,10 @@ function FormField({
         value={Array.isArray(value) ? (value as DeliveryConfirmationItemValue[]) : []}
       />
     );
+  }
+
+  if (field.type === "deliveryPlanSummary") {
+    return <DeliveryPlanSummary value={Array.isArray(value) ? value : []} />;
   }
 
   if (field.type === "checkbox") {
@@ -796,6 +813,17 @@ function DeliveryConfirmationItemsField({
       </Box>
     </Stack>
   );
+}
+
+function DeliveryPlanSummary({ value }: { value: unknown[] }) {
+  const [rows, setRows] = useState<{ itemName: string; quantity: number; freeQuantity: number; totalQuantity: number }[]>([]);
+  useEffect(() => {
+    const ids = value.map((item) => typeof item === "number" ? item : Number((item as Record<string, unknown>).orderId)).filter(Number.isInteger);
+    if (ids.length === 0) { setRows([]); return; }
+    void apiRequest<{ itemName: string; quantity: number; freeQuantity: number; totalQuantity: number }[]>("deliveries/plans/loading-summary", { query: { orderIds: ids.join(",") } }).then(setRows).catch(() => setRows([]));
+  }, [value]);
+  if (rows.length === 0) return <Typography color="text.secondary">Select orders to see the loading summary.</Typography>;
+  return <Table size="small"><TableHead><TableRow><TableCell>Item name</TableCell><TableCell>Qty</TableCell><TableCell>Free issue</TableCell><TableCell>Total qty</TableCell></TableRow></TableHead><TableBody>{rows.map((row, index) => <TableRow key={`${row.itemName}-${index}`}><TableCell>{row.itemName || "Item description unavailable"}</TableCell><TableCell>{row.quantity}</TableCell><TableCell>{row.freeQuantity ?? 0}</TableCell><TableCell>{row.totalQuantity}</TableCell></TableRow>)}</TableBody></Table>;
 }
 
 function OrderItemsField({

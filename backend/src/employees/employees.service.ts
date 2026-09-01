@@ -21,7 +21,7 @@ export class EmployeesService {
 
   async list(query: EmployeeQueryDto) {
     const { limit, page, skip, take } = getPagination(query);
-    const where: Prisma.EmployeeWhereInput = { status: query.status ?? { not: "DELETED" } };
+    const where: Prisma.EmployeeWhereInput = { category: query.category, status: query.status ?? { not: "DELETED" } };
     if (query.search) {
       where.OR = [
         { code: { contains: query.search } },
