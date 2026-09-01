@@ -37,15 +37,20 @@ export class DeliveryService {
     private readonly prisma: PrismaService
   ) {}
 
-  async listDeliveries(query: DeliveryQueryDto) {
+  async listDeliveries(query: DeliveryQueryDto, actor?: import("../common/types/authenticated-user.type").AuthenticatedUser) {
     const { limit, page, skip, take } = getPagination(query);
     const where: Prisma.DeliveryWhereInput = {
       customerId: query.customerId,
       orderId: query.orderId,
       routeId: query.routeId,
-      status: query.status,
+      status: query.status ?? { in: ["PLANNED", "DISPATCHED"] },
       warehouseId: query.warehouseId
     };
+    if (actor?.roles.includes("DELIVERY_PERSON")) {
+      where.deliveryPlan = { driver: { userId: actor.id } };
+    } else if (query.driverId) {
+      where.deliveryPlan = { driverId: query.driverId };
+    }
 
     if (query.search) {
       where.OR = [

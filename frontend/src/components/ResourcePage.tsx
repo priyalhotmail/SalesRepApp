@@ -87,7 +87,7 @@ export type ResourceField = {
   reference?: ResourceReference;
   referenceQuery?: (values: Record<string, unknown>) => Record<string, number | string | boolean | undefined>;
   required?: boolean;
-  type?: "checkbox" | "date" | "datetime" | "deliveryItems" | "deliveryPlanSummary" | "json" | "multiReference" | "number" | "orderItems" | "select" | "text";
+  type?: "checkbox" | "date" | "datetime" | "deliveryItemSummary" | "deliveryItems" | "deliveryPlanSummary" | "json" | "multiReference" | "number" | "orderItems" | "select" | "text";
   visible?: (user: AuthUser | null) => boolean;
 };
 
@@ -163,6 +163,10 @@ export function ResourcePage<T extends Record<string, unknown>>({
     Record<string, ReferenceOption[]>
   >({});
   const [formContext, setFormContext] = useState<CustomerFormContext | null>(null);
+  const [deliveryDriverId, setDeliveryDriverId] = useState("");
+  const [deliveryStatus, setDeliveryStatus] = useState("");
+  const [deliveryDrivers, setDeliveryDrivers] = useState<ReferenceOption[]>([]);
+  const isDeliveryPage = config.endpoint === "deliveries";
 
   const getRowId = config.getRowId ?? ((record: T) => record.id as number);
   const canCreate = Boolean(config.fields?.length && config.createEndpoint) && (config.canCreate?.(user) ?? true);
@@ -183,9 +187,11 @@ export function ResourcePage<T extends Record<string, unknown>>({
       const response = await apiRequest<unknown>(config.endpoint, {
         query: {
           ...config.listQuery,
+          driverId: isDeliveryPage && deliveryDriverId ? Number(deliveryDriverId) : undefined,
           limit: pageSize,
           page,
-          search
+          search,
+          status: isDeliveryPage && deliveryStatus ? deliveryStatus : undefined
         }
       });
       const normalized = normalizeListResponse<T>(response);
@@ -196,7 +202,12 @@ export function ResourcePage<T extends Record<string, unknown>>({
     } finally {
       setIsLoading(false);
     }
-  }, [config.endpoint, config.listQuery, page, search]);
+  }, [config.endpoint, config.listQuery, deliveryDriverId, deliveryStatus, isDeliveryPage, page, search]);
+
+  useEffect(() => {
+    if (!isDeliveryPage || user?.roles.includes("DELIVERY_PERSON")) return;
+    void apiRequest<unknown>("deliveries/drivers").then((response) => setDeliveryDrivers(toReferenceOptions(response, { endpoint: "", labelPath: "user.displayName", secondaryLabelPath: "code" })));
+  }, [isDeliveryPage, user?.roles]);
 
   useEffect(() => {
     void loadRecords();
@@ -443,6 +454,14 @@ export function ResourcePage<T extends Record<string, unknown>>({
         body: buildPayload(bodyFields, actionValues, "create"),
         method: actionConfig.method ?? "POST"
       });
+      if (actionConfig.label === "Dispatch") {
+        const confirmAction = config.actions?.find((action) => action.label === "Confirm");
+        if (confirmAction) {
+          setActionConfig(confirmAction);
+          setActionValues(getInitialValues(confirmAction.bodyFields ?? [], actionRecord));
+          return;
+        }
+      }
       setActionConfig(null);
       setActionRecord(null);
       await loadRecords();
@@ -521,6 +540,12 @@ export function ResourcePage<T extends Record<string, unknown>>({
               size="small"
               value={search}
             />
+            {isDeliveryPage && (
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                {!user?.roles.includes("DELIVERY_PERSON") && <TextField label="Driver" onChange={(event) => { setPage(1); setDeliveryDriverId(event.target.value); }} select size="small" value={deliveryDriverId}><MenuItem value="">All drivers</MenuItem>{deliveryDrivers.map((driver) => <MenuItem key={driver.value} value={driver.value}>{driver.label}</MenuItem>)}</TextField>}
+                <TextField label="Status" onChange={(event) => { setPage(1); setDeliveryStatus(event.target.value); }} select size="small" value={deliveryStatus}><MenuItem value="">Planned & Dispatched</MenuItem>{["PLANNED", "DISPATCHED", "DELIVERED"].map((status) => <MenuItem key={status} value={status}>{status}</MenuItem>)}</TextField>
+              </Stack>
+            )}
             <DataState error={error} loading={isLoading} />
             {!isLoading && !error && (
               <>
@@ -707,6 +732,9 @@ function FormField({
         value={Array.isArray(value) ? (value as DeliveryConfirmationItemValue[]) : []}
       />
     );
+  }
+  if (field.type === "deliveryItemSummary") {
+    return <Table size="small"><TableHead><TableRow><TableCell>Item</TableCell><TableCell>Qty</TableCell></TableRow></TableHead><TableBody>{(Array.isArray(value) ? value : []).map((item) => { const row = item as Record<string, unknown>; const product = row.product as Record<string, unknown> | undefined; return <TableRow key={String(row.id)}><TableCell>{product?.name ?? "Item description unavailable"}</TableCell><TableCell>{Number(row.orderedQuantity ?? 0)}</TableCell></TableRow>; })}</TableBody></Table>;
   }
 
   if (field.type === "deliveryPlanSummary") {
@@ -1217,7 +1245,9 @@ function buildPayload(
     if (value === "" || value === undefined) {
       return result;
     }
-    if (field.type === "number") {
+    if (field.type === "deliveryItemSummary" || field.type === "deliveryPlanSummary") {
+      return result;
+    } else if (field.type === "number") {
       result[field.name] = Number(value);
     } else if (field.type === "checkbox") {
       result[field.name] = Boolean(value);

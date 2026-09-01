@@ -46,6 +46,11 @@ export class DeliveryQueryDto extends PaginationQueryDto {
   @Type(() => Number)
   @IsInt()
   warehouseId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  driverId?: number;
 }
 
 export class CreateDeliveryDto {
