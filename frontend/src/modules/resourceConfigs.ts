@@ -492,7 +492,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
   },
   deliveries: {
     actions: [
-      { disabled: (row) => row.status !== "PLANNED", endpoint: (row) => `deliveries/${row.id}/dispatch`, label: "Dispatch", visible: (_, user) => hasPermission(user, "delivery.update") },
+      { bodyFields: [{ label: "Order items", name: "items", type: "deliveryItemSummary" }], disabled: (row) => row.status !== "PLANNED", endpoint: (row) => `deliveries/${row.id}/dispatch`, label: "Dispatch", visible: (_, user) => hasPermission(user, "delivery.update") },
       { bodyFields: [
         { label: "Received by", name: "receivedBy" },
         { label: "Proof notes", name: "proofNotes" },

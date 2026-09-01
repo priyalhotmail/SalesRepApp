@@ -42,8 +42,8 @@ export class DeliveryController {
 
   @Get()
   @Permissions("delivery.read")
-  listDeliveries(@Query() query: DeliveryQueryDto) {
-    return this.service.listDeliveries(query);
+  listDeliveries(@Query() query: DeliveryQueryDto, @CurrentUser() actor: AuthenticatedUser) {
+    return this.service.listDeliveries(query, actor);
   }
 
   @Post()
