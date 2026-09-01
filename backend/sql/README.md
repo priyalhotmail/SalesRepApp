@@ -83,3 +83,9 @@ If Phase 10 was already applied, make the employee branch assignment optional fo
 ```sql
 SOURCE backend/sql/020_employee_main_office_optional_branch.sql;
 ```
+
+Phase 11 adds employee operational categories and employment types:
+
+```sql
+SOURCE backend/sql/021_employee_category_and_employment_type.sql;
+```

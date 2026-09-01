@@ -67,6 +67,15 @@ type OrderItemValue = {
   unitPrice?: number;
 };
 
+type DeliveryConfirmationItemValue = {
+  deliveredQuantity: number;
+  deliveryItemId: number;
+  notes?: string;
+  orderedQuantity: number;
+  productName: string;
+  rejectedQuantity: number;
+};
+
 export type ResourceField = {
   createOnly?: boolean;
   defaultValue?: "now";
@@ -77,7 +86,7 @@ export type ResourceField = {
   options?: ReferenceOption[];
   reference?: ResourceReference;
   required?: boolean;
-  type?: "checkbox" | "date" | "datetime" | "json" | "multiReference" | "number" | "orderItems" | "select" | "text";
+  type?: "checkbox" | "date" | "datetime" | "deliveryItems" | "json" | "multiReference" | "number" | "orderItems" | "select" | "text";
   visible?: (user: AuthUser | null) => boolean;
 };
 
@@ -411,7 +420,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
   const openAction = (record: T, action: ResourceAction<T>) => {
     setActionRecord(record);
     setActionConfig(action);
-    setActionValues(getInitialValues(action.bodyFields ?? []));
+    setActionValues(getInitialValues(action.bodyFields ?? [], record));
     setFormError(null);
   };
 
@@ -678,6 +687,15 @@ function FormField({
     );
   }
 
+  if (field.type === "deliveryItems") {
+    return (
+      <DeliveryConfirmationItemsField
+        onChange={onChange}
+        value={Array.isArray(value) ? (value as DeliveryConfirmationItemValue[]) : []}
+      />
+    );
+  }
+
   if (field.type === "checkbox") {
     return (
       <FormControlLabel
@@ -740,6 +758,43 @@ function FormField({
       }
       value={value ?? ""}
     />
+  );
+}
+
+function DeliveryConfirmationItemsField({
+  onChange,
+  value
+}: {
+  onChange: (value: DeliveryConfirmationItemValue[]) => void;
+  value: DeliveryConfirmationItemValue[];
+}) {
+  const updateItem = (deliveryItemId: number, changes: Partial<DeliveryConfirmationItemValue>) => {
+    onChange(value.map((item) => item.deliveryItemId === deliveryItemId ? { ...item, ...changes } : item));
+  };
+
+  return (
+    <Stack spacing={1}>
+      <Typography fontWeight={600}>Delivery items</Typography>
+      <Typography color="text.secondary" variant="body2">
+        Update delivered or rejected quantities as needed. Their total cannot exceed the ordered quantity.
+      </Typography>
+      <Box sx={{ overflowX: "auto" }}>
+        <Table size="small">
+          <TableHead><TableRow><TableCell>Item</TableCell><TableCell>Ordered</TableCell><TableCell>Delivered</TableCell><TableCell>Rejected</TableCell><TableCell>Notes</TableCell></TableRow></TableHead>
+          <TableBody>
+            {value.map((item) => (
+              <TableRow key={item.deliveryItemId}>
+                <TableCell>{item.productName}</TableCell>
+                <TableCell>{item.orderedQuantity}</TableCell>
+                <TableCell><TextField inputProps={{ min: 0 }} onChange={(event) => updateItem(item.deliveryItemId, { deliveredQuantity: Number(event.target.value) })} size="small" type="number" value={item.deliveredQuantity} /></TableCell>
+                <TableCell><TextField inputProps={{ min: 0 }} onChange={(event) => updateItem(item.deliveryItemId, { rejectedQuantity: Number(event.target.value) })} size="small" type="number" value={item.rejectedQuantity} /></TableCell>
+                <TableCell><TextField onChange={(event) => updateItem(item.deliveryItemId, { notes: event.target.value })} size="small" value={item.notes ?? ""} /></TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Box>
+    </Stack>
   );
 }
 
@@ -1009,6 +1064,23 @@ function getInitialValues(
       } else {
         result[field.name] = [];
       }
+    } else if (field.type === "deliveryItems") {
+      result[field.name] = Array.isArray(value)
+        ? value.map((item) => {
+            const row = item as Record<string, unknown>;
+            const product = row.product as Record<string, unknown> | undefined;
+            return {
+              deliveredQuantity: Number(row.orderedQuantity ?? 0),
+              deliveryItemId: Number(row.id),
+              notes: "",
+              orderedQuantity: Number(row.orderedQuantity ?? 0),
+              productName: product
+                ? [product.code, product.name].filter(Boolean).join(" - ")
+                : String(row.productId ?? "Item"),
+              rejectedQuantity: 0
+            } satisfies DeliveryConfirmationItemValue;
+          })
+        : [];
     } else if (field.type === "orderItems") {
       result[field.name] = Array.isArray(value)
         ? value.map((item) => {
@@ -1129,6 +1201,15 @@ function buildPayload(
       if (numericValues.length > 0) {
         result[field.name] = numericValues;
       }
+    } else if (field.type === "deliveryItems") {
+      result[field.name] = Array.isArray(value)
+        ? value.map((item) => ({
+            deliveredQuantity: Number((item as DeliveryConfirmationItemValue).deliveredQuantity),
+            deliveryItemId: Number((item as DeliveryConfirmationItemValue).deliveryItemId),
+            notes: (item as DeliveryConfirmationItemValue).notes || undefined,
+            rejectedQuantity: Number((item as DeliveryConfirmationItemValue).rejectedQuantity)
+          }))
+        : [];
     } else if (field.type === "orderItems") {
       result[field.name] = Array.isArray(value)
         ? value.map((item) => ({
