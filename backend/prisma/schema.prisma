@@ -152,6 +152,12 @@ enum DeliveryStatus {
   CANCELLED
 }
 
+enum DeliveryPlanStatus {
+  PLANNED
+  LOADED
+  CANCELLED
+}
+
 enum SalesInvoiceStatus {
   ISSUED
   PARTIALLY_PAID
@@ -415,6 +421,7 @@ model Warehouse {
   employees          Employee[]
   orders             Order[]
   deliveries         Delivery[]
+  deliveryPlans      DeliveryPlan[]
   outgoingTransfers  WarehouseTransfer[] @relation("TransferFromWarehouse")
   incomingTransfers  WarehouseTransfer[] @relation("TransferToWarehouse")
 
@@ -484,6 +491,8 @@ model Employee {
   office    Office    @relation("EmployeeOffice", fields: [officeId], references: [id])
   branch    Office?   @relation("EmployeeBranch", fields: [branchId], references: [id])
   warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  assignedRoutes Route[] @relation("RouteDriver")
+  deliveryPlans DeliveryPlan[] @relation("DeliveryPlanDriver")
 
   @@index([officeId])
   @@index([branchId])
@@ -972,6 +981,7 @@ model StockReservation {
 model Route {
   id          Int          @id @default(autoincrement())
   officeId    Int          @map("office_id")
+  driverId    Int?         @map("driver_id")
   code        String       @unique @db.VarChar(40)
   name        String       @db.VarChar(160)
   description String?      @db.VarChar(500)
@@ -984,12 +994,15 @@ model Route {
   deletedById Int?         @map("deleted_by_id")
 
   office     Office          @relation(fields: [officeId], references: [id])
+  driver     Employee?      @relation("RouteDriver", fields: [driverId], references: [id])
   customers  RouteCustomer[]
   schedules  RouteSchedule[]
   orders     Order[]
   deliveries Delivery[]
+  deliveryPlans DeliveryPlan[]
 
   @@index([officeId])
+  @@index([driverId])
   @@index([status])
   @@map("routes")
 }
@@ -1058,6 +1071,7 @@ model Order {
   reservations           StockReservation[]
   amendments             OrderAmendmentRequest[]
   delivery               Delivery?
+  deliveryPlanOrders     DeliveryPlanOrder[]
   salesInvoice           SalesInvoice?
   returns                SalesReturn[]
   creditOverrideRequests CreditOverrideRequest[]
@@ -1123,6 +1137,7 @@ model Delivery {
   id             Int            @id @default(autoincrement())
   deliveryNumber String         @unique @map("delivery_number") @db.VarChar(40)
   orderId        Int            @unique @map("order_id")
+  deliveryPlanId Int?           @map("delivery_plan_id")
   customerId     Int            @map("customer_id")
   routeId        Int?           @map("route_id")
   warehouseId    Int            @map("warehouse_id")
@@ -1141,17 +1156,61 @@ model Delivery {
   updatedById    Int?           @map("updated_by_id")
 
   order     Order          @relation(fields: [orderId], references: [id])
+  deliveryPlan DeliveryPlan? @relation(fields: [deliveryPlanId], references: [id])
   customer  Customer       @relation(fields: [customerId], references: [id])
   route     Route?         @relation(fields: [routeId], references: [id])
   warehouse Warehouse      @relation(fields: [warehouseId], references: [id])
   items     DeliveryItem[]
 
   @@index([customerId])
+  @@index([deliveryPlanId])
   @@index([routeId])
   @@index([warehouseId])
   @@index([deliveryDate])
   @@index([status])
   @@map("deliveries")
+}
+
+model DeliveryPlan {
+  id                 Int                @id @default(autoincrement())
+  planNumber         String             @unique @map("plan_number") @db.VarChar(40)
+  routeId            Int                @map("route_id")
+  warehouseId        Int                @map("warehouse_id")
+  driverId           Int                @map("driver_id")
+  plannedDate        DateTime           @map("planned_date")
+  status             DeliveryPlanStatus @default(PLANNED)
+  loadingConfirmedAt DateTime?          @map("loading_confirmed_at")
+  loadingConfirmedById Int?             @map("loading_confirmed_by_id")
+  notes              String?            @db.VarChar(500)
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+  createdById        Int?               @map("created_by_id")
+  updatedById        Int?               @map("updated_by_id")
+
+  route Route @relation(fields: [routeId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  driver Employee @relation("DeliveryPlanDriver", fields: [driverId], references: [id])
+  deliveries Delivery[]
+  orders DeliveryPlanOrder[]
+
+  @@index([routeId])
+  @@index([warehouseId])
+  @@index([driverId])
+  @@index([plannedDate])
+  @@index([status])
+  @@map("delivery_plans")
+}
+
+model DeliveryPlanOrder {
+  deliveryPlanId Int @map("delivery_plan_id")
+  orderId Int @map("order_id")
+
+  deliveryPlan DeliveryPlan @relation(fields: [deliveryPlanId], references: [id])
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@id([deliveryPlanId, orderId])
+  @@index([orderId])
+  @@map("delivery_plan_orders")
 }
 
 model DeliveryItem {

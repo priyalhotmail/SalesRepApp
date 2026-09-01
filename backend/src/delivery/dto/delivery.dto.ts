@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   ArrayMinSize,
   IsArray,
@@ -118,4 +118,28 @@ export class DeliveryNoteDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+}
+
+export class DeliveryPlanQueryDto extends PaginationQueryDto {
+  @IsOptional() @Type(() => Number) @IsInt() routeId?: number;
+}
+
+export class DeliveryPlanEligibleOrdersQueryDto extends PaginationQueryDto {
+  @IsOptional() @Type(() => Number) @IsInt() routeId?: number;
+}
+
+export class DeliveryPlanSummaryQueryDto {
+  @IsOptional()
+  @Transform(({ value }) => typeof value === "string" ? value.split(",").map(Number).filter(Number.isInteger) : [])
+  @IsArray()
+  @IsInt({ each: true })
+  orderIds: number[] = [];
+}
+
+export class CreateDeliveryPlanDto {
+  @Type(() => Number) @IsInt() routeId!: number;
+  @Type(() => Number) @IsInt() driverId!: number;
+  @IsDateString() plannedDate!: string;
+  @IsArray() @ArrayMinSize(1) @Type(() => Number) @IsInt({ each: true }) orderIds!: number[];
+  @IsOptional() @IsString() @MaxLength(500) notes?: string;
 }
