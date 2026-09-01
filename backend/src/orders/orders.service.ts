@@ -751,8 +751,9 @@ export class OrdersService {
       Number(stock.onHandQuantity) - Number(stock.reservedQuantity);
 
     if (quantity > available) {
+      const product = await tx.product.findUnique({ select: { name: true }, where: { id: productId } });
       throw new BadRequestException(
-        `Insufficient available stock for product ${productId}`
+        `Insufficient available stock for ${product?.name ?? "the selected item"}`
       );
     }
 

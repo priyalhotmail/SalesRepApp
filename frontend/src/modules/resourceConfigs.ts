@@ -22,8 +22,7 @@ const notesField: ResourceField = {
 
 const customerReference = {
   endpoint: "customers",
-  labelPath: "displayName",
-  secondaryLabelPath: "code"
+  labelPath: "displayName"
 };
 const factoryReference = {
   endpoint: "factories",
@@ -53,8 +52,7 @@ const eligibleInvoiceOrderReference = {
 };
 const productReference = {
   endpoint: "products",
-  labelPath: "name",
-  secondaryLabelPath: "code"
+  labelPath: "name"
 };
 const productGroupReference = {
   endpoint: "product-groups",
