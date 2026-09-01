@@ -18,7 +18,7 @@ export class DashboardController {
     @Query() query: DashboardQueryDto,
     @CurrentUser() actor: AuthenticatedUser
   ) {
-    return this.service.getSummary(query, actor.id);
+    return this.service.getSummary(query, actor);
   }
 
   @Get("sales-trend")

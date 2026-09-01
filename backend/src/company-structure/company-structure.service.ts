@@ -79,7 +79,10 @@ export class CompanyStructureService {
 
   async listOffices(query: StructureQueryDto) {
     const { limit, page, skip, take } = getPagination(query);
-    const where: Prisma.OfficeWhereInput = this.getRecordWhere(query);
+    const where: Prisma.OfficeWhereInput = {
+      ...this.getRecordWhere(query),
+      officeType: query.officeType
+    };
 
     if (query.search) {
       where.OR = [

@@ -71,3 +71,15 @@ Phase 9 adds Sales Rep primary warehouse assignment and primary active customer 
 ```sql
 SOURCE backend/sql/016_sales_rep_warehouse_primary_route.sql;
 ```
+
+Phase 10 adds employee records linked to an existing user account, office, branch, and warehouse:
+
+```sql
+SOURCE backend/sql/019_employees_schema_and_permissions.sql;
+```
+
+If Phase 10 was already applied, make the employee branch assignment optional for main-office employees:
+
+```sql
+SOURCE backend/sql/020_employee_main_office_optional_branch.sql;
+```

@@ -12,6 +12,7 @@ import { CustomersModule } from "./customers/customers.module";
 import { ChequesModule } from "./cheques/cheques.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { DeliveryModule } from "./delivery/delivery.module";
+import { EmployeesModule } from "./employees/employees.module";
 import { DiscountsModule } from "./discounts/discounts.module";
 import { HealthModule } from "./health/health.module";
 import { InventoryModule } from "./inventory/inventory.module";
@@ -56,6 +57,7 @@ import { WarehouseTransfersModule } from "./warehouse-transfers/warehouse-transf
     RoutesModule,
     OrdersModule,
     DeliveryModule,
+    EmployeesModule,
     SalesInvoicesModule,
     PaymentsModule,
     ChequesModule,

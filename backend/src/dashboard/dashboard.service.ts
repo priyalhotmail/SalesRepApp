@@ -1,5 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { AuthenticatedUser } from "../common/types/authenticated-user.type";
+import { isSalesRepScopedActor } from "../common/utils/user-scope.util";
 import { PrismaService } from "../prisma/prisma.service";
 import { DashboardQueryDto, DashboardTrendQueryDto } from "./dto/dashboard-query.dto";
 
@@ -7,8 +9,11 @@ import { DashboardQueryDto, DashboardTrendQueryDto } from "./dto/dashboard-query
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSummary(query: DashboardQueryDto, actorUserId: number) {
+  async getSummary(query: DashboardQueryDto, actor: AuthenticatedUser) {
     const dateFilter = this.getDateFilter(query);
+    const officeId = isSalesRepScopedActor(actor)
+      ? await this.getSalesRepOfficeId(actor.id)
+      : undefined;
     const [
       customerCount,
       productCount,
@@ -28,7 +33,7 @@ export class DashboardService {
       this.prisma.warehouse.count({ where: { status: { not: "DELETED" } } }),
       this.prisma.order.findMany({
         select: { status: true, totalAmount: true },
-        where: { deletedAt: null, orderDate: dateFilter }
+        where: { deletedAt: null, officeId, orderDate: dateFilter }
       }),
       this.prisma.salesInvoice.aggregate({
         _count: { _all: true },
@@ -51,7 +56,7 @@ export class DashboardService {
       this.getLowStockCount(),
       this.getPendingActionCounts(),
       this.prisma.notification.count({
-        where: { status: "UNREAD", userId: actorUserId }
+        where: { status: "UNREAD", userId: actor.id }
       })
     ]);
 
@@ -265,5 +270,16 @@ export class DashboardService {
 
   private money(value: number) {
     return Number(value.toFixed(2));
+  }
+
+  private async getSalesRepOfficeId(userId: number) {
+    const salesRep = await this.prisma.salesRep.findFirst({
+      select: { officeId: true },
+      where: { status: "ACTIVE", userId }
+    });
+    if (!salesRep) {
+      throw new BadRequestException("Authenticated user is not linked to an active sales rep");
+    }
+    return salesRep.officeId;
   }
 }

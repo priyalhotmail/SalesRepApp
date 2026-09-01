@@ -69,6 +69,7 @@ type OrderItemValue = {
 
 export type ResourceField = {
   createOnly?: boolean;
+  defaultValue?: "now";
   helperText?: string;
   label: string;
   loadOptions?: boolean;
@@ -77,10 +78,12 @@ export type ResourceField = {
   reference?: ResourceReference;
   required?: boolean;
   type?: "checkbox" | "date" | "datetime" | "json" | "multiReference" | "number" | "orderItems" | "select" | "text";
+  visible?: (user: AuthUser | null) => boolean;
 };
 
 export type ResourceAction<T> = {
   bodyFields?: ResourceField[];
+  bodyMessage?: (record: T) => string;
   disabled?: (record: T, user: AuthUser | null) => boolean;
   endpoint: (record: T) => string;
   label: string;
@@ -154,9 +157,12 @@ export function ResourcePage<T extends Record<string, unknown>>({
   const canEdit = Boolean(config.fields?.length && config.updateEndpoint) && (config.canEdit?.(user) ?? true);
   const canDelete = Boolean(config.deleteEndpoint);
   const referenceFields = useMemo(() => collectReferenceFields(config), [config]);
-  const visibleFormFields = editingRecord
-    ? (config.fields ?? []).filter((field) => !field.createOnly)
-    : config.fields ?? [];
+  const visibleColumns = config.columns.filter((column) => column.visible?.(user) ?? true);
+  const visibleFormFields = (config.fields ?? []).filter(
+    (field) =>
+      (!editingRecord || !field.createOnly) &&
+      (field.visible?.(user) ?? true)
+  );
 
   const loadRecords = useCallback(async () => {
     setIsLoading(true);
@@ -184,46 +190,35 @@ export function ResourcePage<T extends Record<string, unknown>>({
     void loadRecords();
   }, [loadRecords]);
 
-  useEffect(() => {
-    let isActive = true;
-
-    async function loadReferenceOptions() {
-      if (referenceFields.length === 0) {
-        setReferenceOptions({});
-        return;
-      }
-
-      try {
-        const entries = await Promise.all(
-          referenceFields.map(async (field) => {
-            const reference = field.reference!;
-            const response = await apiRequest<unknown>(reference.endpoint, {
-              query: { limit: 100, ...reference.query }
-            });
-            const rows = normalizeListResponse<Record<string, unknown>>(response).data;
-            return [
-              field.name,
-              rows.map((row) => toReferenceOption(row, reference))
-            ] as const;
-          })
-        );
-
-        if (isActive) {
-          setReferenceOptions(Object.fromEntries(entries));
-        }
-      } catch (currentError) {
-        if (isActive) {
-          setError(getErrorMessage(currentError));
-        }
-      }
+  const loadReferenceOptions = useCallback(async () => {
+    if (referenceFields.length === 0) {
+      setReferenceOptions({});
+      return;
     }
 
-    void loadReferenceOptions();
-
-    return () => {
-      isActive = false;
-    };
+    try {
+      const entries = await Promise.all(
+        referenceFields.map(async (field) => {
+          const reference = field.reference!;
+          const response = await apiRequest<unknown>(reference.endpoint, {
+            query: { limit: 100, ...reference.query }
+          });
+          const rows = normalizeListResponse<Record<string, unknown>>(response).data;
+          return [
+            field.name,
+            rows.map((row) => toReferenceOption(row, reference))
+          ] as const;
+        })
+      );
+      setReferenceOptions(Object.fromEntries(entries));
+    } catch (currentError) {
+      setError(getErrorMessage(currentError));
+    }
   }, [referenceFields]);
+
+  useEffect(() => {
+    void loadReferenceOptions();
+  }, [loadReferenceOptions]);
 
   const salesRepCustomerContext = formContext?.salesRep;
 
@@ -392,6 +387,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
       }
       setFormOpen(false);
       await loadRecords();
+      await loadReferenceOptions();
     } catch (currentError) {
       setFormError(getErrorMessage(currentError));
     } finally {
@@ -406,6 +402,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
     try {
       await apiRequest(config.deleteEndpoint(record), { method: "DELETE" });
       await loadRecords();
+      await loadReferenceOptions();
     } catch (currentError) {
       setError(getErrorMessage(currentError));
     }
@@ -513,7 +510,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
               <>
                 <ResponsiveDataView
                   actions={canEdit || canDelete || config.actions?.length ? actionButtons : undefined}
-                  columns={config.columns}
+                  columns={visibleColumns}
                   getRowId={getRowId}
                   records={records}
                 />
@@ -585,6 +582,9 @@ export function ResourcePage<T extends Record<string, unknown>>({
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             {formError && <Alert severity="error">{formError}</Alert>}
+            {actionConfig?.bodyMessage && actionRecord && (
+              <Typography>{actionConfig.bodyMessage(actionRecord)}</Typography>
+            )}
             {(actionConfig?.bodyFields ?? []).map((field) => (
               <FormField
                 field={field}
@@ -991,7 +991,11 @@ function getInitialValues(
   referenceOptions: Record<string, ReferenceOption[]> = {}
 ) {
   return fields.reduce<Record<string, unknown>>((result, field) => {
-    const value = record ? getValueByPath(record, field.name) : undefined;
+    const value = record
+      ? getValueByPath(record, field.name)
+      : field.defaultValue === "now" && (field.type === "date" || field.type === "datetime")
+        ? toLocalDateTimeValue(field.type)
+        : undefined;
     if (field.type === "json") {
       result[field.name] = value === undefined ? "" : JSON.stringify(value, null, 2);
     } else if (field.type === "multiReference") {
@@ -1035,6 +1039,13 @@ function getInitialValues(
     }
     return result;
   }, {});
+}
+
+function toLocalDateTimeValue(type: "date" | "datetime") {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60_000;
+  const local = new Date(now.getTime() - offset).toISOString();
+  return type === "date" ? local.slice(0, 10) : local.slice(0, 16);
 }
 
 function collectReferenceFields<T extends Record<string, unknown>>(
