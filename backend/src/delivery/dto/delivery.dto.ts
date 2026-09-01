@@ -24,8 +24,8 @@ const deliveryStatuses = [
 
 export class DeliveryQueryDto extends PaginationQueryDto {
   @IsOptional()
-  @IsIn(deliveryStatuses)
-  status?: (typeof deliveryStatuses)[number];
+  @IsString()
+  status?: string;
 
   @IsOptional()
   @Type(() => Number)

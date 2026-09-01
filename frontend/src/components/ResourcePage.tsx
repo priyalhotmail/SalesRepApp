@@ -164,9 +164,18 @@ export function ResourcePage<T extends Record<string, unknown>>({
   >({});
   const [formContext, setFormContext] = useState<CustomerFormContext | null>(null);
   const [deliveryDriverId, setDeliveryDriverId] = useState("");
-  const [deliveryStatus, setDeliveryStatus] = useState("");
+  const [deliveryStatus, setDeliveryStatus] = useState<string[]>(["PLANNED", "DISPATCHED"]);
+  const [orderStatus, setOrderStatus] = useState("");
   const [deliveryDrivers, setDeliveryDrivers] = useState<ReferenceOption[]>([]);
   const isDeliveryPage = config.endpoint === "deliveries";
+  const isOrderPage = config.endpoint === "orders";
+  const isSalesRepOnly = Boolean(
+    user?.roles?.includes("SALES_REP") &&
+    !user.roles.some((role) =>
+      ["SUPER_ADMIN", "MAIN_OFFICE_AUTHORIZED_USER", "BRANCH_AUTHORIZED_USER"].includes(role)
+    )
+  );
+  const selectedOrderStatus = orderStatus || (isSalesRepOnly ? "DELIVERED" : "SUBMITTED");
 
   const getRowId = config.getRowId ?? ((record: T) => record.id as number);
   const canCreate = Boolean(config.fields?.length && config.createEndpoint) && (config.canCreate?.(user) ?? true);
@@ -191,7 +200,11 @@ export function ResourcePage<T extends Record<string, unknown>>({
           limit: pageSize,
           page,
           search,
-          status: isDeliveryPage && deliveryStatus ? deliveryStatus : undefined
+          status: isDeliveryPage
+            ? deliveryStatus.join(",")
+            : isOrderPage
+              ? selectedOrderStatus
+              : undefined
         }
       });
       const normalized = normalizeListResponse<T>(response);
@@ -202,10 +215,10 @@ export function ResourcePage<T extends Record<string, unknown>>({
     } finally {
       setIsLoading(false);
     }
-  }, [config.endpoint, config.listQuery, deliveryDriverId, deliveryStatus, isDeliveryPage, page, search]);
+  }, [config.endpoint, config.listQuery, deliveryDriverId, deliveryStatus, isDeliveryPage, isOrderPage, page, search, selectedOrderStatus]);
 
   useEffect(() => {
-    if (!isDeliveryPage || user?.roles.includes("DELIVERY_PERSON")) return;
+    if (!isDeliveryPage || user?.roles?.includes("DELIVERY_PERSON")) return;
     void apiRequest<unknown>("deliveries/drivers").then((response) => setDeliveryDrivers(toReferenceOptions(response, { endpoint: "", labelPath: "user.displayName", secondaryLabelPath: "code" })));
   }, [isDeliveryPage, user?.roles]);
 
@@ -542,9 +555,23 @@ export function ResourcePage<T extends Record<string, unknown>>({
             />
             {isDeliveryPage && (
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                {!user?.roles.includes("DELIVERY_PERSON") && <TextField label="Driver" onChange={(event) => { setPage(1); setDeliveryDriverId(event.target.value); }} select size="small" value={deliveryDriverId}><MenuItem value="">All drivers</MenuItem>{deliveryDrivers.map((driver) => <MenuItem key={driver.value} value={driver.value}>{driver.label}</MenuItem>)}</TextField>}
-                <TextField label="Status" onChange={(event) => { setPage(1); setDeliveryStatus(event.target.value); }} select size="small" value={deliveryStatus}><MenuItem value="">Planned & Dispatched</MenuItem>{["PLANNED", "DISPATCHED", "DELIVERED"].map((status) => <MenuItem key={status} value={status}>{status}</MenuItem>)}</TextField>
+                {user?.roles?.includes("DELIVERY_PERSON") ? <TextField disabled fullWidth label="Driver" size="small" slotProps={{ inputLabel: { shrink: true } }} sx={{ minWidth: { sm: 260 } }} value={user.displayName} /> : <TextField fullWidth label="Driver" onChange={(event) => { setPage(1); setDeliveryDriverId(event.target.value); }} select size="small" slotProps={{ inputLabel: { shrink: true }, select: { displayEmpty: true } }} sx={{ minWidth: { sm: 260 } }} value={deliveryDriverId}><MenuItem value="">All drivers</MenuItem>{deliveryDrivers.map((driver) => <MenuItem key={driver.value} value={driver.value}>{driver.label}</MenuItem>)}</TextField>}
+                <FormGroup row><Typography sx={{ alignSelf: "center", mr: 1 }} variant="body2">Status:</Typography>{["PLANNED", "DISPATCHED", "PARTIALLY_DELIVERED", "DELIVERED", "CANCELLED"].map((status) => <FormControlLabel control={<Checkbox checked={deliveryStatus.includes(status)} onChange={(event) => { setPage(1); setDeliveryStatus((current) => event.target.checked ? [...current, status] : current.filter((item) => item !== status)); }} />} key={status} label={status.replace("_", " ")} />)}</FormGroup>
               </Stack>
+            )}
+            {isOrderPage && (
+              <TextField
+                fullWidth
+                label="Status"
+                onChange={(event) => { setPage(1); setOrderStatus(event.target.value); }}
+                select
+                size="small"
+                value={selectedOrderStatus}
+              >
+                {["SUBMITTED", "APPROVED", "RESERVED", "DELIVERED", "CANCELLED"].map((status) => (
+                  <MenuItem key={status} value={status}>{status}</MenuItem>
+                ))}
+              </TextField>
             )}
             <DataState error={error} loading={isLoading} />
             {!isLoading && !error && (
@@ -734,7 +761,7 @@ function FormField({
     );
   }
   if (field.type === "deliveryItemSummary") {
-    return <Table size="small"><TableHead><TableRow><TableCell>Item</TableCell><TableCell>Qty</TableCell></TableRow></TableHead><TableBody>{(Array.isArray(value) ? value : []).map((item) => { const row = item as Record<string, unknown>; const product = row.product as Record<string, unknown> | undefined; return <TableRow key={String(row.id)}><TableCell>{product?.name ?? "Item description unavailable"}</TableCell><TableCell>{Number(row.orderedQuantity ?? 0)}</TableCell></TableRow>; })}</TableBody></Table>;
+    return <Table size="small"><TableHead><TableRow><TableCell>Item</TableCell><TableCell>Qty</TableCell></TableRow></TableHead><TableBody>{(Array.isArray(value) ? value : []).map((item) => { const row = item as Record<string, unknown>; const product = row.product as Record<string, unknown> | undefined; return <TableRow key={String(row.id)}><TableCell>{typeof product?.name === "string" ? product.name : "Item description unavailable"}</TableCell><TableCell>{Number(row.orderedQuantity ?? 0)}</TableCell></TableRow>; })}</TableBody></Table>;
   }
 
   if (field.type === "deliveryPlanSummary") {
@@ -881,7 +908,7 @@ function OrderItemsField({
         setProducts(
           rows.map((row) => ({
             code: typeof row.code === "string" ? row.code : undefined,
-            label: [row.code, row.name].filter(Boolean).join(" - "),
+            label: String(row.name ?? "Item description unavailable"),
             value: String(row.id)
           }))
         );

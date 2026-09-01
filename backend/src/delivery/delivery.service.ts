@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { DeliveryStatus, Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { RequestContext } from "../common/types/request-context.type";
 import { toAuditJson } from "../common/utils/audit-json.util";
@@ -43,7 +43,7 @@ export class DeliveryService {
       customerId: query.customerId,
       orderId: query.orderId,
       routeId: query.routeId,
-      status: query.status ?? { in: ["PLANNED", "DISPATCHED"] },
+      status: query.status ? { in: query.status.split(",") as DeliveryStatus[] } : { in: ["PLANNED", "DISPATCHED"] },
       warehouseId: query.warehouseId
     };
     if (actor?.roles.includes("DELIVERY_PERSON")) {
