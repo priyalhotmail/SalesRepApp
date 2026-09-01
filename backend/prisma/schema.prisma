@@ -21,6 +21,20 @@ enum RecordStatus {
   DELETED
 }
 
+enum EmployeeCategory {
+  DRIVER
+  SALES_REP
+  MANAGER
+  WAREHOUSE_OFFICER
+  OTHER
+}
+
+enum EmploymentType {
+  PERMANENT
+  CONTRACT
+  TEMPORARY
+}
+
 enum OfficeType {
   MAIN
   BRANCH
@@ -455,6 +469,8 @@ model Employee {
   officeId    Int          @map("office_id")
   branchId    Int?         @map("branch_id")
   warehouseId Int          @map("warehouse_id")
+  category    EmployeeCategory @default(OTHER)
+  employmentType EmploymentType @default(PERMANENT) @map("employment_type")
   designation String?      @db.VarChar(120)
   status      RecordStatus @default(ACTIVE)
   createdAt   DateTime     @default(now()) @map("created_at")
@@ -472,6 +488,8 @@ model Employee {
   @@index([officeId])
   @@index([branchId])
   @@index([warehouseId])
+  @@index([category])
+  @@index([employmentType])
   @@index([status])
   @@map("employees")
 }

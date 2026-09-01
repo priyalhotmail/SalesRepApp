@@ -180,6 +180,8 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { label: "Office", path: "office.name" },
       { label: "Branch", path: "branch.name" },
       { label: "Warehouse", path: "warehouse.name" },
+      { label: "Category", path: "category" },
+      { label: "Employment", path: "employmentType" },
       { label: "Status", path: "status" }
     ],
     createEndpoint: "employees",
@@ -192,6 +194,8 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { label: "Office", name: "officeId", reference: officeReference, required: true, type: "number" },
       { label: "Branch (not needed for Main Office)", name: "branchId", reference: branchReference, type: "number" },
       { label: "Warehouse", name: "warehouseId", reference: warehouseReference, required: true, type: "number" },
+      { label: "Category", name: "category", options: ["DRIVER", "SALES_REP", "MANAGER", "WAREHOUSE_OFFICER", "OTHER"].map(toOption), required: true, type: "select" },
+      { label: "Employment type", name: "employmentType", options: ["PERMANENT", "CONTRACT", "TEMPORARY"].map(toOption), required: true, type: "select" },
       { label: "Designation", name: "designation" },
       { label: "Status", name: "status", options: statusOptions, type: "select" }
     ],
@@ -468,7 +472,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { bodyFields: [
         { label: "Received by", name: "receivedBy" },
         { label: "Proof notes", name: "proofNotes" },
-        { helperText: "Example: [{\"deliveryItemId\":1,\"deliveredQuantity\":12,\"rejectedQuantity\":0}]", label: "Items", name: "items", type: "json" }
+        { label: "Items", name: "items", required: true, type: "deliveryItems" }
       ], endpoint: (row) => `deliveries/${row.id}/confirm`, label: "Confirm" },
       { endpoint: (row) => `deliveries/${row.id}/cancel`, label: "Cancel" }
     ],
