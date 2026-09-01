@@ -34,6 +34,7 @@ const drawerWidth = 264;
 const navigationItems = [
   { icon: <DashboardIcon />, label: "Dashboard", path: "/", permissions: ["dashboard.read"] },
   { icon: <PeopleIcon />, label: "Users", path: "/module/users", permissions: ["users.read"] },
+  { icon: <PeopleIcon />, label: "Employees", path: "/module/employees", permissions: ["employees.read"] },
   { icon: <StorefrontIcon />, label: "Sales Reps", path: "/module/salesReps", permissions: ["sales_reps.read"] },
   { icon: <StorefrontIcon />, label: "Offices", path: "/module/offices", permissions: ["company_structure.read"] },
   { icon: <StorefrontIcon />, label: "Factories", path: "/module/factories", permissions: ["company_structure.read"] },

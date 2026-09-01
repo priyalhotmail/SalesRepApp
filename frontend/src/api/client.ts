@@ -78,11 +78,35 @@ export async function apiRequest<T>(
   );
 
   const text = await response.text();
-  const parsed = text ? JSON.parse(text) : null;
+  const responseText = text.trim();
+  let parsed: unknown = null;
+
+  // Some API handlers intentionally do not return a body. Depending on the
+  // server/proxy in use, that can be serialized as the literal string
+  // "undefined" rather than an empty response.
+  if (responseText && responseText !== "undefined") {
+    try {
+      parsed = JSON.parse(responseText);
+    } catch {
+      throw new ApiError(
+        response.ok
+          ? "The server returned an invalid response."
+          : responseText || `Request failed with HTTP ${response.status}`,
+        response.status
+      );
+    }
+  }
 
   if (!response.ok) {
+    const message =
+      parsed &&
+      typeof parsed === "object" &&
+      "message" in parsed &&
+      typeof parsed.message === "string"
+        ? parsed.message
+        : `Request failed with HTTP ${response.status}`;
     throw new ApiError(
-      parsed?.message ?? `Request failed with HTTP ${response.status}`,
+      message,
       response.status,
       parsed
     );

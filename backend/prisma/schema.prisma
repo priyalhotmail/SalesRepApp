@@ -265,6 +265,7 @@ model User {
   roles                          UserRole[]
   auditLogs                      AuditLog[]                       @relation("AuditActor")
   salesReps                      SalesRep[]
+  employee                       Employee?
   customerChangeRequests         CustomerChangeRequest[]          @relation("CustomerChangeRequestedBy")
   reviewedCustomerChangeRequests CustomerChangeRequest[]          @relation("CustomerChangeReviewedBy")
   customerChangeHistory          CustomerChangeHistory[]          @relation("CustomerHistoryChangedBy")
@@ -335,6 +336,8 @@ model Office {
   routes               Route[]
   orders               Order[]
   priceListAssignments PriceListAssignment[]
+  employees           Employee[]             @relation("EmployeeOffice")
+  branchEmployees     Employee[]             @relation("EmployeeBranch")
 
   @@index([companyId])
   @@index([officeType])
@@ -395,6 +398,7 @@ model Warehouse {
   inventoryMovements InventoryMovement[]
   stockReservations  StockReservation[]
   primarySalesReps   SalesRep[]           @relation("SalesRepPrimaryWarehouse")
+  employees          Employee[]
   orders             Order[]
   deliveries         Delivery[]
   outgoingTransfers  WarehouseTransfer[] @relation("TransferFromWarehouse")
@@ -442,6 +446,34 @@ model SalesRep {
   @@index([warehouseId])
   @@index([status])
   @@map("sales_reps")
+}
+
+model Employee {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique @db.VarChar(40)
+  userId      Int          @unique @map("user_id")
+  officeId    Int          @map("office_id")
+  branchId    Int?         @map("branch_id")
+  warehouseId Int          @map("warehouse_id")
+  designation String?      @db.VarChar(120)
+  status      RecordStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  createdById Int?         @map("created_by_id")
+  updatedById Int?         @map("updated_by_id")
+  deletedAt   DateTime?    @map("deleted_at")
+  deletedById Int?         @map("deleted_by_id")
+
+  user      User      @relation(fields: [userId], references: [id])
+  office    Office    @relation("EmployeeOffice", fields: [officeId], references: [id])
+  branch    Office?   @relation("EmployeeBranch", fields: [branchId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+
+  @@index([officeId])
+  @@index([branchId])
+  @@index([warehouseId])
+  @@index([status])
+  @@map("employees")
 }
 
 model Customer {

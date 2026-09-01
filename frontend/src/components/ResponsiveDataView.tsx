@@ -13,12 +13,14 @@ import {
   useTheme
 } from "@mui/material";
 import { ReactNode } from "react";
+import { AuthUser } from "../auth/AuthContext";
 import { formatDisplayValue, getValueByPath } from "../utils/object";
 
 export type DataColumn<T> = {
   label: string;
   path?: string;
   render?: (record: T) => ReactNode;
+  visible?: (user: AuthUser | null) => boolean;
 };
 
 type ResponsiveDataViewProps<T> = {

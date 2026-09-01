@@ -35,6 +35,12 @@ const officeReference = {
   labelPath: "name",
   secondaryLabelPath: "code"
 };
+const branchReference = {
+  endpoint: "offices",
+  labelPath: "name",
+  query: { officeType: "BRANCH" },
+  secondaryLabelPath: "code"
+};
 const orderReference = {
   endpoint: "orders",
   labelPath: "orderNumber",
@@ -80,6 +86,11 @@ const userReference = {
   labelPath: "displayName",
   secondaryLabelPath: "email"
 };
+const availableEmployeeUserReference = {
+  endpoint: "employees/available-users",
+  labelPath: "displayName",
+  secondaryLabelPath: "email"
+};
 const warehouseReference = {
   endpoint: "warehouses",
   labelPath: "name",
@@ -101,6 +112,15 @@ function isSalesRepOnly(user: AuthUser | null) {
 
 function isTerminalOrder(row: ResourceRecord) {
   return ["CANCELLED", "DELIVERED"].includes(String(row.status));
+}
+
+function orderMessage(row: ResourceRecord, action: "approve" | "reserve") {
+  const salesRep = (row.salesRep as ResourceRecord | undefined)?.name ?? "the Sales Rep";
+  const customer = (row.customer as ResourceRecord | undefined)?.displayName ?? "the customer";
+  const total = Number(row.totalAmount ?? 0).toFixed(2);
+  return action === "approve"
+    ? `Do you want to approve ${salesRep}'s order ${row.orderNumber} for ${customer}, total amount ${total}?`
+    : `Do you want to reserve stock for ${salesRep}'s order ${row.orderNumber} for ${customer}, total amount ${total}?`;
 }
 
 export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>> = {
@@ -153,13 +173,38 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     title: "Sales Reps",
     updateEndpoint: (row) => `sales-reps/${row.id}`
   },
+  employees: {
+    columns: [
+      { label: "Code", path: "code" },
+      { label: "Employee", path: "user.displayName" },
+      { label: "Office", path: "office.name" },
+      { label: "Branch", path: "branch.name" },
+      { label: "Warehouse", path: "warehouse.name" },
+      { label: "Status", path: "status" }
+    ],
+    createEndpoint: "employees",
+    deleteEndpoint: (row) => `employees/${row.id}`,
+    detailEndpoint: (row) => `employees/${row.id}`,
+    endpoint: "employees",
+    requiredPermissions: ["employees.read"],
+    fields: [
+      { createOnly: true, label: "User account", name: "userId", reference: availableEmployeeUserReference, required: true, type: "number" },
+      { label: "Office", name: "officeId", reference: officeReference, required: true, type: "number" },
+      { label: "Branch (not needed for Main Office)", name: "branchId", reference: branchReference, type: "number" },
+      { label: "Warehouse", name: "warehouseId", reference: warehouseReference, required: true, type: "number" },
+      { label: "Designation", name: "designation" },
+      { label: "Status", name: "status", options: statusOptions, type: "select" }
+    ],
+    title: "Employees",
+    updateEndpoint: (row) => `employees/${row.id}`
+  },
   offices: {
     columns: [
       { label: "Code", path: "code" },
       { label: "Name", path: "name" },
       { label: "Type", path: "officeType" },
       { label: "Phone", path: "telephone" },
-      { label: "Status", path: "status" }
+      { label: "Status", path: "status", visible: (user) => !isSalesRepOnly(user) }
     ],
     createEndpoint: "offices",
     deleteEndpoint: (row) => `offices/${row.id}`,
@@ -230,7 +275,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { label: "Name", path: "displayName" },
       { label: "Type", path: "customerType" },
       { label: "Sales rep", path: "salesRep.name" },
-      { label: "Status", path: "status" }
+      { label: "Status", path: "status", visible: (user) => !isSalesRepOnly(user) }
     ],
     createEndpoint: "customers",
     deleteEndpoint: (row) => `customers/${row.id}`,
@@ -245,12 +290,12 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { label: "Display name", name: "displayName", required: true },
       { label: "Registration number", name: "registrationNumber" },
       { label: "VAT registration number", name: "vatRegistrationNumber" },
+      { label: "Contact person", name: "contactPerson" },
       { label: "NIC", name: "nic" },
       { label: "Address", name: "address" },
       { label: "Telephone", name: "telephone" },
-      { label: "Contact person", name: "contactPerson" },
       { label: "Email", name: "email" },
-      { label: "Status", name: "status", options: statusOptions, type: "select" }
+      { label: "Status", name: "status", options: statusOptions, type: "select", visible: (user) => !isSalesRepOnly(user) }
     ],
     title: "Customers",
     updateEndpoint: (row) => `customers/${row.id}`
@@ -377,12 +422,14 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
   orders: {
     actions: [
       {
+        bodyMessage: (row) => orderMessage(row, "approve"),
         disabled: (row) => row.status !== "SUBMITTED",
         endpoint: (row) => `orders/${row.id}/approve`,
         label: "Approve",
         visible: (_, user) => isSuperAdmin(user)
       },
       {
+        bodyMessage: (row) => orderMessage(row, "reserve"),
         disabled: (row) => row.status !== "APPROVED",
         endpoint: (row) => `orders/${row.id}/reserve-stock`,
         label: "Reserve",
@@ -408,7 +455,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     requiredPermissions: ["orders.read"],
     fields: [
       { createOnly: true, label: "Customer", name: "customerId", reference: customerReference, required: true, type: "number" },
-      { createOnly: true, label: "Order date", name: "orderDate", required: true, type: "datetime" },
+      { createOnly: true, defaultValue: "now", label: "Order date", name: "orderDate", required: true, type: "datetime" },
       { label: "Items", name: "items", required: true, type: "orderItems" },
       notesField
     ],
@@ -458,7 +505,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     requiredPermissions: ["sales_invoices.read"],
     fields: [
       { label: "Order", name: "orderId", reference: eligibleInvoiceOrderReference, required: true, type: "number" },
-      { label: "Invoice date", name: "invoiceDate", type: "datetime" },
+      { defaultValue: "now", label: "Invoice date", name: "invoiceDate", type: "datetime" },
       { label: "Due date", name: "dueDate", type: "datetime" },
       notesField
     ],
