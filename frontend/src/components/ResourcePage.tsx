@@ -76,6 +76,13 @@ type DeliveryConfirmationItemValue = {
   rejectedQuantity: number;
 };
 
+type WarehouseTransferItemValue = {
+  notes?: string;
+  productId: number;
+  productName: string;
+  requestedQuantity: number;
+};
+
 export type ResourceField = {
   createOnly?: boolean;
   defaultValue?: "now";
@@ -87,7 +94,7 @@ export type ResourceField = {
   reference?: ResourceReference;
   referenceQuery?: (values: Record<string, unknown>) => Record<string, number | string | boolean | undefined>;
   required?: boolean;
-  type?: "checkbox" | "date" | "datetime" | "deliveryItemSummary" | "deliveryItems" | "deliveryPlanSummary" | "json" | "multiReference" | "number" | "orderItems" | "select" | "text";
+  type?: "checkbox" | "date" | "datetime" | "deliveryItemSummary" | "deliveryItems" | "deliveryPlanSummary" | "json" | "multiReference" | "number" | "orderItems" | "select" | "text" | "warehouseTransferItems" | "warehouseTransferSummary";
   visible?: (user: AuthUser | null) => boolean;
 };
 
@@ -99,6 +106,7 @@ export type ResourceAction<T> = {
   label: string;
   method?: "POST" | "PATCH" | "PUT" | "DELETE";
   previewOnly?: boolean;
+  submitLabel?: string;
   visible?: (record: T, user: AuthUser | null) => boolean;
   variant?: "outlined" | "contained";
 };
@@ -246,7 +254,10 @@ export function ResourcePage<T extends Record<string, unknown>>({
           ] as const;
         })
       );
-      setReferenceOptions(Object.fromEntries(entries));
+      setReferenceOptions((current) => ({
+        ...current,
+        ...Object.fromEntries(entries)
+      }));
     } catch (currentError) {
       setError(getErrorMessage(currentError));
     }
@@ -467,6 +478,13 @@ export function ResourcePage<T extends Record<string, unknown>>({
         body: buildPayload(bodyFields, actionValues, "create"),
         method: actionConfig.method ?? "POST"
       });
+      if (isOrderPage && actionConfig.label === "Approve") {
+        setActionConfig(null);
+        setActionRecord(null);
+        setPage(1);
+        setOrderStatus("APPROVED");
+        return;
+      }
       if (actionConfig.label === "Dispatch") {
         const confirmAction = config.actions?.find((action) => action.label === "Confirm");
         if (confirmAction) {
@@ -603,35 +621,34 @@ export function ResourcePage<T extends Record<string, unknown>>({
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             {formError && <Alert severity="error">{formError}</Alert>}
-            {visibleFormFields.map((field) => (
-              <FormField
-                disabled={Boolean(
-                  salesRepCustomerContext &&
-                  (field.name === "officeId" || field.name === "salesRepId")
-                )}
-                field={field}
-                key={field.name}
-                onChange={(value) =>
-                  setFormValues((current) =>
-                    field.name === "officeId"
-                      ? { ...current, officeId: value, routeId: "", salesRepId: "" }
-                      : field.name === "routeId"
-                        ? { ...current, routeId: value, orderIds: [] }
-                      : { ...current, [field.name]: value }
-                  )
-                }
-                options={getFieldOptions(field, referenceOptions)}
-                helperText={
-                  salesRepCustomerContext && field.name === "officeId"
-                    ? "Automatically set from your Sales Rep profile."
-                    : salesRepCustomerContext && field.name === "salesRepId"
-                      ? "Automatically set to your Sales Rep profile."
-                      : undefined
-                }
-                values={formValues}
-                value={formValues[field.name]}
-              />
-            ))}
+            {visibleFormFields.map((field) => {
+              const profileValue = field.name === "officeId"
+                ? salesRepCustomerContext?.office?.name
+                : field.name === "salesRepId"
+                  ? salesRepCustomerContext?.name
+                  : undefined;
+              if (profileValue) {
+                return <TextField disabled fullWidth key={field.name} label={field.label} value={profileValue} />;
+              }
+              return (
+                <FormField
+                  field={field}
+                  key={field.name}
+                  onChange={(value) =>
+                    setFormValues((current) =>
+                      field.name === "officeId"
+                        ? { ...current, officeId: value, routeId: "", salesRepId: "" }
+                        : field.name === "routeId"
+                          ? { ...current, routeId: value, orderIds: [] }
+                        : { ...current, [field.name]: value }
+                    )
+                  }
+                  options={getFieldOptions(field, referenceOptions)}
+                  values={formValues}
+                  value={formValues[field.name]}
+                />
+              );
+            })}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -675,7 +692,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
           ) : (
             <>
               <Button onClick={() => setActionConfig(null)}>Cancel</Button>
-              <Button disabled={isSaving} onClick={() => void runAction()} variant="contained">Submit</Button>
+              <Button disabled={isSaving} onClick={() => void runAction()} variant="contained">{actionConfig?.submitLabel ?? "Submit"}</Button>
             </>
           )}
         </DialogActions>
@@ -750,6 +767,19 @@ function FormField({
         value={Array.isArray(value) ? (value as OrderItemValue[]) : []}
       />
     );
+  }
+
+  if (field.type === "warehouseTransferItems") {
+    return (
+      <WarehouseTransferItemsField
+        onChange={onChange}
+        value={Array.isArray(value) ? (value as WarehouseTransferItemValue[]) : []}
+      />
+    );
+  }
+
+  if (field.type === "warehouseTransferSummary") {
+    return <WarehouseTransferItemsSummary value={Array.isArray(value) ? value : []} />;
   }
 
   if (field.type === "deliveryItems") {
@@ -998,11 +1028,12 @@ function OrderItemsField({
       </Stack>
 
       {isDesktop ? (
-        <Table size="small">
+        <Box sx={{ overflowX: "auto" }}>
+        <Table size="small" sx={{ minWidth: 760, tableLayout: "fixed" }}>
           <TableHead>
             <TableRow>
-              <TableCell>Item Name</TableCell>
-              <TableCell>Qty</TableCell>
+              <TableCell sx={{ width: "34%" }}>Item Name</TableCell>
+              <TableCell sx={{ width: 120 }}>Qty</TableCell>
               <TableCell>Retail Price</TableCell>
               <TableCell>Discount</TableCell>
               <TableCell>Net Value</TableCell>
@@ -1012,9 +1043,10 @@ function OrderItemsField({
           <TableBody>
             {value.map((item) => (
               <TableRow key={item.productId}>
-                <TableCell>{item.productName}</TableCell>
-                <TableCell>
+                <TableCell sx={{ overflowWrap: "anywhere" }}>{item.productName}</TableCell>
+                <TableCell sx={{ minWidth: 120 }}>
                   <TextField
+                    fullWidth
                     inputProps={{ min: 1 }}
                     onChange={(event) => void updateQuantity(item.productId, Number(event.target.value))}
                     size="small"
@@ -1034,6 +1066,7 @@ function OrderItemsField({
             ))}
           </TableBody>
         </Table>
+        </Box>
       ) : (
         <Stack spacing={1}>
           {value.map((item) => (
@@ -1066,6 +1099,88 @@ function OrderItemsField({
         <Typography variant="body2">Discount: {formatMoney(discount)}</Typography>
         <Typography fontWeight={700}>Total: {formatMoney(total)}</Typography>
       </Stack>
+    </Stack>
+  );
+}
+
+function WarehouseTransferItemsField({
+  onChange,
+  value
+}: {
+  onChange: (value: WarehouseTransferItemValue[]) => void;
+  value: WarehouseTransferItemValue[];
+}) {
+  const [products, setProducts] = useState<ReferenceOption[]>([]);
+  const [productId, setProductId] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    void apiRequest<unknown>("products", { query: { limit: 100 } })
+      .then((response) => {
+        if (isActive) setProducts(toReferenceOptions(response, { endpoint: "products", labelPath: "name" }));
+      })
+      .catch((currentError) => isActive && setError(getErrorMessage(currentError)));
+    return () => { isActive = false; };
+  }, []);
+
+  const addItem = () => {
+    const selectedProductId = Number(productId);
+    const requestedQuantity = Number(quantity);
+    if (!selectedProductId || requestedQuantity <= 0) {
+      setError("Select an item and enter a quantity greater than 0.");
+      return;
+    }
+    if (value.some((item) => item.productId === selectedProductId)) {
+      setError("This item is already in the transfer.");
+      return;
+    }
+    const productName = products.find((product) => product.value === productId)?.label ?? "Item description unavailable";
+    onChange([...value, { productId: selectedProductId, productName, requestedQuantity }]);
+    setProductId("");
+    setQuantity("1");
+    setError(null);
+  };
+
+  const updateQuantity = (targetProductId: number, requestedQuantity: number) => {
+    if (requestedQuantity <= 0) return;
+    onChange(value.map((item) => item.productId === targetProductId ? { ...item, requestedQuantity } : item));
+  };
+
+  return (
+    <Stack spacing={1.5}>
+      <Typography fontWeight={600}>Items</Typography>
+      {error && <Alert severity="error">{error}</Alert>}
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+        <TextField fullWidth label="Item" onChange={(event) => setProductId(event.target.value)} select value={productId}>
+          {products.map((product) => <MenuItem key={product.value} value={product.value}>{product.label}</MenuItem>)}
+        </TextField>
+        <TextField inputProps={{ min: 0.001, step: 0.001 }} label="Qty" onChange={(event) => setQuantity(event.target.value)} sx={{ width: { sm: 140 } }} type="number" value={quantity} />
+        <Button onClick={addItem} sx={{ minHeight: 48 }} variant="contained">Add</Button>
+      </Stack>
+      {value.length > 0 && <Box sx={{ overflowX: "auto" }}><Table size="small" sx={{ minWidth: 500 }}><TableHead><TableRow><TableCell>Item name</TableCell><TableCell sx={{ width: 130 }}>Qty</TableCell><TableCell sx={{ width: 100 }}>Action</TableCell></TableRow></TableHead><TableBody>{value.map((item) => <TableRow key={item.productId}><TableCell sx={{ overflowWrap: "anywhere" }}>{item.productName}</TableCell><TableCell><TextField fullWidth inputProps={{ min: 0.001, step: 0.001 }} onChange={(event) => updateQuantity(item.productId, Number(event.target.value))} size="small" type="number" value={item.requestedQuantity} /></TableCell><TableCell><Button color="error" onClick={() => onChange(value.filter((row) => row.productId !== item.productId))} size="small">Remove</Button></TableCell></TableRow>)}</TableBody></Table></Box>}
+    </Stack>
+  );
+}
+
+function WarehouseTransferItemsSummary({ value }: { value: unknown[] }) {
+  if (value.length === 0) {
+    return <Typography color="text.secondary">No items have been added to this transfer.</Typography>;
+  }
+  return (
+    <Stack spacing={1}>
+      <Typography fontWeight={600}>Items breakdown</Typography>
+      <Box sx={{ overflowX: "auto" }}>
+        <Table size="small" sx={{ minWidth: 620 }}>
+          <TableHead><TableRow><TableCell>Item name</TableCell><TableCell align="right">Requested</TableCell><TableCell align="right">Approved</TableCell><TableCell align="right">Dispatched</TableCell><TableCell align="right">Received</TableCell></TableRow></TableHead>
+          <TableBody>{value.map((item, index) => {
+            const row = item as Record<string, unknown>;
+            const product = row.product as Record<string, unknown> | undefined;
+            return <TableRow key={String(row.id ?? index)}><TableCell sx={{ overflowWrap: "anywhere" }}>{typeof product?.name === "string" ? product.name : "Item description unavailable"}</TableCell><TableCell align="right">{Number(row.requestedQuantity ?? 0)}</TableCell><TableCell align="right">{Number(row.approvedQuantity ?? 0)}</TableCell><TableCell align="right">{Number(row.dispatchedQuantity ?? 0)}</TableCell><TableCell align="right">{Number(row.receivedQuantity ?? 0)}</TableCell></TableRow>;
+          })}</TableBody>
+        </Table>
+      </Box>
     </Stack>
   );
 }
@@ -1182,6 +1297,19 @@ function getInitialValues(
             };
           })
         : [];
+    } else if (field.type === "warehouseTransferItems") {
+      result[field.name] = Array.isArray(value)
+        ? value.map((item) => {
+            const row = item as Record<string, unknown>;
+            const product = row.product as Record<string, unknown> | undefined;
+            return {
+              notes: typeof row.notes === "string" ? row.notes : undefined,
+              productId: Number(row.productId),
+              productName: typeof product?.name === "string" ? product.name : String(row.productId),
+              requestedQuantity: Number(row.requestedQuantity ?? 0)
+            } satisfies WarehouseTransferItemValue;
+          })
+        : [];
     } else if (field.name === "routeId" && value === undefined && Array.isArray(record?.routeAssignments)) {
       const primaryRoute = (record.routeAssignments as Record<string, unknown>[])[0];
       result[field.name] = primaryRoute?.routeId ?? "";
@@ -1272,7 +1400,7 @@ function buildPayload(
     if (value === "" || value === undefined) {
       return result;
     }
-    if (field.type === "deliveryItemSummary" || field.type === "deliveryPlanSummary") {
+    if (field.type === "deliveryItemSummary" || field.type === "deliveryPlanSummary" || field.type === "warehouseTransferSummary") {
       return result;
     } else if (field.type === "number") {
       result[field.name] = Number(value);
@@ -1300,6 +1428,14 @@ function buildPayload(
         ? value.map((item) => ({
             productId: Number((item as OrderItemValue).productId),
             quantity: Number((item as OrderItemValue).quantity)
+          }))
+        : [];
+    } else if (field.type === "warehouseTransferItems") {
+      result[field.name] = Array.isArray(value)
+        ? value.map((item) => ({
+            notes: (item as WarehouseTransferItemValue).notes || undefined,
+            productId: Number((item as WarehouseTransferItemValue).productId),
+            requestedQuantity: Number((item as WarehouseTransferItemValue).requestedQuantity)
           }))
         : [];
     } else if (field.type === "datetime") {

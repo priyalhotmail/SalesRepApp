@@ -146,9 +146,10 @@ export class DeliveryService {
     const plan = await this.prisma.deliveryPlan.findUnique({ include: { driver: { include: { user: true } }, orders: { include: { order: { include: { items: true } } } } }, where: { id } });
     if (!plan || plan.status !== "PLANNED") throw new BadRequestException("Only planned delivery runs can be confirmed as loaded");
     return this.prisma.$transaction(async (tx) => {
-      for (const entry of plan.orders) {
+      const deliveryCount = await tx.delivery.count();
+      for (const [index, entry] of plan.orders.entries()) {
         const order = entry.order;
-        await tx.delivery.create({ data: { deliveryNumber: await this.generateDeliveryNumber(), deliveryPlanId: plan.id, orderId: order.id, customerId: order.customerId, routeId: order.routeId, warehouseId: order.warehouseId!, deliveryDate: plan.plannedDate, driverName: plan.driver.user.displayName, items: { create: order.items.map((item) => ({ orderItemId: item.id, productId: item.productId, orderedQuantity: Number(item.quantity) + Number(item.freeQuantity) })) } } });
+        await tx.delivery.create({ data: { deliveryNumber: this.formatDeliveryNumber(deliveryCount + index + 1), deliveryPlanId: plan.id, orderId: order.id, customerId: order.customerId, routeId: order.routeId, warehouseId: order.warehouseId!, deliveryDate: plan.plannedDate, driverName: plan.driver.user.displayName, items: { create: order.items.map((item) => ({ orderItemId: item.id, productId: item.productId, orderedQuantity: Number(item.quantity) + Number(item.freeQuantity) })) } } });
       }
       return tx.deliveryPlan.update({ data: { status: "LOADED", loadingConfirmedAt: new Date(), loadingConfirmedById: context.actor.id, updatedById: context.actor.id }, where: { id } });
     });
@@ -519,7 +520,11 @@ export class DeliveryService {
 
   private async generateDeliveryNumber() {
     const count = await this.prisma.delivery.count();
+    return this.formatDeliveryNumber(count + 1);
+  }
+
+  private formatDeliveryNumber(sequence: number) {
     const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    return `DEL-${datePart}-${String(count + 1).padStart(5, "0")}`;
+    return `DEL-${datePart}-${String(sequence).padStart(5, "0")}`;
   }
 }

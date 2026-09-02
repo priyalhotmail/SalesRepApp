@@ -521,7 +521,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
   deliveryPlans: {
     actions: [
       { bodyFields: [{ label: "Loading summary", name: "orders", type: "deliveryPlanSummary" }], endpoint: () => "", label: "View Loading Summary", previewOnly: true },
-      { bodyMessage: (row) => `${(row.route as ResourceRecord | undefined)?.name ?? "Route"} - ${formatPlanDate(row.plannedDate)} orders are loaded successfully.`, disabled: (row) => row.status !== "PLANNED", endpoint: (row) => `deliveries/plans/${row.id}/confirm-loading`, label: "Confirm Loading", visible: (_, user) => hasPermission(user, "delivery.update") }
+      { bodyMessage: (row) => `${(row.route as ResourceRecord | undefined)?.name ?? "Route"} - ${formatPlanDate(row.plannedDate)} orders are loaded successfully.`, disabled: (row) => row.status !== "PLANNED", endpoint: (row) => `deliveries/plans/${row.id}/confirm-loading`, label: "Confirm Loading", submitLabel: "Confirm", visible: (_, user) => hasPermission(user, "delivery.update") }
     ],
     columns: [
       { label: "Plan", path: "planNumber" },
@@ -659,11 +659,12 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
   },
   warehouseTransfers: {
     actions: [
-      { bodyFields: [notesField], endpoint: (row) => `warehouse-transfers/${row.id}/approve`, label: "Approve" },
-      { bodyFields: [notesField], endpoint: (row) => `warehouse-transfers/${row.id}/reject`, label: "Reject" },
-      { bodyFields: [notesField], endpoint: (row) => `warehouse-transfers/${row.id}/dispatch`, label: "Dispatch" },
-      { bodyFields: [notesField], endpoint: (row) => `warehouse-transfers/${row.id}/receive`, label: "Receive" },
-      { bodyFields: [notesField], endpoint: (row) => `warehouse-transfers/${row.id}/cancel`, label: "Cancel" }
+      { bodyFields: [{ label: "Items", name: "items", type: "warehouseTransferSummary" }], endpoint: () => "", label: "View Items", previewOnly: true },
+      { bodyFields: [{ label: "Items", name: "items", type: "warehouseTransferSummary" }, notesField], bodyMessage: (row) => `Confirm transfer ${row.transferNumber} from ${(row.fromWarehouse as ResourceRecord | undefined)?.name ?? "the source warehouse"} to ${(row.toWarehouse as ResourceRecord | undefined)?.name ?? "the destination warehouse"}?`, disabled: (row) => row.status !== "REQUESTED", endpoint: (row) => `warehouse-transfers/${row.id}/approve`, label: "Approve", submitLabel: "Confirm" },
+      { bodyFields: [notesField], disabled: (row) => row.status !== "REQUESTED", endpoint: (row) => `warehouse-transfers/${row.id}/reject`, label: "Reject" },
+      { bodyFields: [{ label: "Items", name: "items", type: "warehouseTransferSummary" }, notesField], bodyMessage: (row) => `Dispatch transfer ${row.transferNumber} from ${(row.fromWarehouse as ResourceRecord | undefined)?.name ?? "the source warehouse"} to ${(row.toWarehouse as ResourceRecord | undefined)?.name ?? "the destination warehouse"}?`, disabled: (row) => row.status !== "APPROVED", endpoint: (row) => `warehouse-transfers/${row.id}/dispatch`, label: "Dispatch", submitLabel: "Confirm Dispatch" },
+      { bodyFields: [{ label: "Items", name: "items", type: "warehouseTransferSummary" }, notesField], bodyMessage: (row) => `Receive transfer ${row.transferNumber} at ${(row.toWarehouse as ResourceRecord | undefined)?.name ?? "the receiving warehouse"}?`, disabled: (row) => row.status !== "IN_TRANSIT", endpoint: (row) => `warehouse-transfers/${row.id}/receive`, label: "Receive", submitLabel: "Confirm Receipt" },
+      { bodyFields: [notesField], disabled: (row) => !["REQUESTED", "APPROVED"].includes(String(row.status)), endpoint: (row) => `warehouse-transfers/${row.id}/cancel`, label: "Cancel" }
     ],
     columns: [
       { label: "Number", path: "transferNumber" },
@@ -678,7 +679,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
     fields: [
       { label: "From warehouse", name: "fromWarehouseId", reference: warehouseReference, required: true, type: "number" },
       { label: "To warehouse", name: "toWarehouseId", reference: warehouseReference, required: true, type: "number" },
-      { helperText: "Example: [{\"productId\":1,\"requestedQuantity\":250}]", label: "Items", name: "items", required: true, type: "json" },
+      { label: "Items", name: "items", required: true, type: "warehouseTransferItems" },
       notesField
     ],
     title: "Warehouse Transfers"

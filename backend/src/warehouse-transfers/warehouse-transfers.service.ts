@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException
 } from "@nestjs/common";
@@ -219,6 +220,7 @@ export class WarehouseTransfersService {
     context: RequestContext
   ) {
     const transfer = await this.findById(id);
+    await this.ensureReceiveAccess(transfer.toWarehouseId, context.actor);
     if (transfer.status !== "IN_TRANSIT") {
       throw new BadRequestException("Only in-transit transfers can be received");
     }
@@ -292,6 +294,24 @@ export class WarehouseTransfersService {
     });
     await this.recordAudit(`WAREHOUSE_TRANSFER_${status}`, updatedTransfer, context, transfer);
     return updatedTransfer;
+  }
+
+  private async ensureReceiveAccess(warehouseId: number, actor: RequestContext["actor"]) {
+    if (actor.roles.includes("SUPER_ADMIN")) {
+      return;
+    }
+    const employee = await this.prisma.employee.findFirst({
+      select: { id: true },
+      where: {
+        deletedAt: null,
+        status: "ACTIVE",
+        userId: actor.id,
+        warehouseId
+      }
+    });
+    if (!employee) {
+      throw new ForbiddenException("Only an authorized user assigned to the receiving warehouse can receive this transfer");
+    }
   }
 
   private async addHistory(
