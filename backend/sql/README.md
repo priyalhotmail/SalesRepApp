@@ -119,3 +119,11 @@ Allow Delivery Person users to generate an invoice after confirming their delive
 ```sql
 SOURCE backend/sql/026_delivery_person_invoice_create_permission.sql;
 ```
+
+Temporary cash and cheque collection (apply once before starting the updated app):
+
+```sql
+SOURCE backend/sql/027_temporary_payment_collection.sql;
+```
+
+Then regenerate the Prisma client and restart the backend. Sign in again to refresh role permissions. Existing posted receipts remain unchanged. New receipts are temporary; cash settles at handover and cheques settle at bank reconciliation. Customer-level receipts allocate to oldest due invoices.

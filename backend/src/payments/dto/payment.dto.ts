@@ -1,5 +1,8 @@
 import { Type } from "class-transformer";
 import {
+  IsArray,
+  ArrayMinSize,
+  ArrayMaxSize,
   IsDateString,
   IsIn,
   IsInt,
@@ -8,12 +11,17 @@ import {
   IsString,
   MaxLength,
   Min,
-  ValidateNested
+  ValidateNested,
 } from "class-validator";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 
 const paymentMethods = ["CASH", "CHEQUE", "BANK_TRANSFER", "CARD"] as const;
-const paymentStatuses = ["POSTED", "CANCELLED"] as const;
+const paymentStatuses = [
+  "TEMPORARY",
+  "AWAITING_CLEARANCE",
+  "POSTED",
+  "CANCELLED",
+] as const;
 
 export class PaymentQueryDto extends PaginationQueryDto {
   @IsOptional()
@@ -36,24 +44,47 @@ export class PaymentQueryDto extends PaginationQueryDto {
 }
 
 export class ChequePaymentDto {
+  @IsOptional()
   @IsString()
   @MaxLength(80)
-  chequeNumber!: string;
+  chequeNumber?: string;
 
+  @IsOptional()
   @IsString()
   @MaxLength(160)
-  bankName!: string;
+  bankName?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(160)
   branchName?: string;
 
+  @IsOptional()
   @IsDateString()
-  chequeDate!: string;
+  chequeDate?: string;
+}
+
+export class PaymentAllocationDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  invoiceId!: number;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  amount!: number;
 }
 
 export class CreatePaymentDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @ValidateNested({ each: true })
+  @Type(() => PaymentAllocationDto)
+  allocations?: PaymentAllocationDto[];
+
   @Type(() => Number)
   @IsInt()
   customerId!: number;
@@ -71,7 +102,7 @@ export class CreatePaymentDto {
   method!: (typeof paymentMethods)[number];
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
   amount!: number;
 
@@ -92,3 +123,5 @@ export class CancelPaymentDto {
   @MaxLength(500)
   notes?: string;
 }
+
+export class ConfirmPaymentDto extends ChequePaymentDto {}
