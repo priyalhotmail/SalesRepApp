@@ -83,6 +83,7 @@ JOIN permissions p ON p.code IN (
   'delivery.create',
   'delivery.update',
   'sales_invoices.read',
+  'sales_invoices.create',
   'payments.read',
   'cheques.read',
   'returns.read',
