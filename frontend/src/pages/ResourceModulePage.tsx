@@ -1,3 +1,4 @@
+import { PaymentsPage } from "./PaymentsPage";
 import { Navigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { hasAnyPermission } from "../auth/permissions";
@@ -17,6 +18,8 @@ export function ResourceModulePage() {
   if (!hasAnyPermission(user, config.requiredPermissions)) {
     return <AccessDenied />;
   }
+
+  if (moduleKey === "payments") return <PaymentsPage />;
 
   return <ResourcePage<ResourceRecord> config={config} />;
 }

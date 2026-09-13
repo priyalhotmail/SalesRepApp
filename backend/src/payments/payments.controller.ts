@@ -7,7 +7,7 @@ import {
   Post,
   Query,
   Req,
-  UseGuards
+  UseGuards,
 } from "@nestjs/common";
 import { Request } from "express";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
@@ -17,9 +17,10 @@ import { PermissionsGuard } from "../common/guards/permissions.guard";
 import { AuthenticatedUser } from "../common/types/authenticated-user.type";
 import { buildRequestContext } from "../common/types/request-context.type";
 import {
+  ConfirmPaymentDto,
   CancelPaymentDto,
   CreatePaymentDto,
-  PaymentQueryDto
+  PaymentQueryDto,
 } from "./dto/payment.dto";
 import { PaymentsService } from "./payments.service";
 
@@ -39,9 +40,30 @@ export class PaymentsController {
   createPayment(
     @Body() dto: CreatePaymentDto,
     @CurrentUser() actor: AuthenticatedUser,
-    @Req() request: Request
+    @Req() request: Request,
   ) {
     return this.service.createPayment(dto, buildRequestContext(actor, request));
+  }
+
+  @Get("customer/:id/outstanding")
+  @Permissions("payments.read")
+  customerOutstanding(@Param("id", ParseIntPipe) id: number) {
+    return this.service.customerOutstanding(id);
+  }
+
+  @Post(":id/confirm")
+  @Permissions("payments.confirm")
+  confirmPayment(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: ConfirmPaymentDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.service.confirmPayment(
+      id,
+      dto,
+      buildRequestContext(actor, request),
+    );
   }
 
   @Get(":id")
@@ -56,8 +78,12 @@ export class PaymentsController {
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: CancelPaymentDto,
     @CurrentUser() actor: AuthenticatedUser,
-    @Req() request: Request
+    @Req() request: Request,
   ) {
-    return this.service.cancelPayment(id, dto, buildRequestContext(actor, request));
+    return this.service.cancelPayment(
+      id,
+      dto,
+      buildRequestContext(actor, request),
+    );
   }
 }

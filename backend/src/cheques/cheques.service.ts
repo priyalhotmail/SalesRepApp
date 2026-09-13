@@ -1,27 +1,31 @@
 import {
   BadRequestException,
   Injectable,
-  NotFoundException
+  NotFoundException,
 } from "@nestjs/common";
+import { settlePayment } from "../payments/settle-payment";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { RequestContext } from "../common/types/request-context.type";
 import { toAuditJson } from "../common/utils/audit-json.util";
-import { getPagination, toPaginatedResult } from "../common/utils/pagination.util";
+import {
+  getPagination,
+  toPaginatedResult,
+} from "../common/utils/pagination.util";
 import { PrismaService } from "../prisma/prisma.service";
 import { ChequeQueryDto, ReturnChequeDto } from "./dto/cheque.dto";
 
 const chequeInclude = {
   customer: true,
   payment: true,
-  salesInvoice: true
+  salesInvoice: true,
 } satisfies Prisma.ChequeInclude;
 
 @Injectable()
 export class ChequesService {
   constructor(
     private readonly auditService: AuditService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
   ) {}
 
   async listCheques(query: ChequeQueryDto) {
@@ -29,7 +33,7 @@ export class ChequesService {
     const where: Prisma.ChequeWhereInput = {
       customerId: query.customerId,
       salesInvoiceId: query.salesInvoiceId,
-      status: query.status
+      status: query.status,
     };
 
     if (query.search) {
@@ -38,7 +42,7 @@ export class ChequesService {
         { bankName: { contains: query.search } },
         { customer: { code: { contains: query.search } } },
         { customer: { displayName: { contains: query.search } } },
-        { salesInvoice: { invoiceNumber: { contains: query.search } } }
+        { salesInvoice: { invoiceNumber: { contains: query.search } } },
       ];
     }
 
@@ -48,9 +52,9 @@ export class ChequesService {
         orderBy: { receivedDate: "desc" },
         skip,
         take,
-        where
+        where,
       }),
-      this.prisma.cheque.count({ where })
+      this.prisma.cheque.count({ where }),
     ]);
 
     return toPaginatedResult(data, total, page, limit);
@@ -59,7 +63,7 @@ export class ChequesService {
   async findChequeById(id: number) {
     const cheque = await this.prisma.cheque.findUnique({
       include: chequeInclude,
-      where: { id }
+      where: { id },
     });
     if (!cheque) {
       throw new NotFoundException("Cheque not found");
@@ -69,6 +73,12 @@ export class ChequesService {
 
   async depositCheque(id: number, context: RequestContext) {
     const cheque = await this.findChequeById(id);
+    if (cheque.payment?.status === "TEMPORARY")
+      throw new BadRequestException(
+        "Confirm handover before depositing the cheque",
+      );
+    if (!cheque.chequeDate || cheque.chequeDate > new Date())
+      throw new BadRequestException("Cheque is not yet due for deposit");
     if (cheque.status !== "RECEIVED") {
       throw new BadRequestException("Only received cheques can be deposited");
     }
@@ -77,10 +87,10 @@ export class ChequesService {
       data: {
         depositedAt: new Date(),
         status: "DEPOSITED",
-        updatedById: context.actor.id
+        updatedById: context.actor.id,
       },
       include: chequeInclude,
-      where: { id }
+      where: { id },
     });
 
     await this.auditService.record({
@@ -91,7 +101,7 @@ export class ChequesService {
       ipAddress: context.ipAddress,
       newValues: toAuditJson(depositedCheque),
       oldValues: toAuditJson(cheque),
-      userAgent: context.userAgent
+      userAgent: context.userAgent,
     });
 
     return depositedCheque;
@@ -100,18 +110,48 @@ export class ChequesService {
   async realizeCheque(id: number, context: RequestContext) {
     const cheque = await this.findChequeById(id);
     if (!["RECEIVED", "DEPOSITED"].includes(cheque.status)) {
-      throw new BadRequestException("Only received or deposited cheques can be realized");
+      throw new BadRequestException(
+        "Only received or deposited cheques can be realized",
+      );
     }
+    if (cheque.payment?.status === "TEMPORARY")
+      throw new BadRequestException("Confirm handover before reconciliation");
+    if (
+      !cheque.chequeNumber ||
+      !cheque.chequeDate ||
+      cheque.chequeDate > new Date()
+    )
+      throw new BadRequestException(
+        "Complete cheque details and wait until its date before reconciliation",
+      );
     if (cheque.payment?.status === "CANCELLED") {
-      throw new BadRequestException("Cancelled payment cheques cannot be realized");
+      throw new BadRequestException(
+        "Cancelled payment cheques cannot be realized",
+      );
     }
 
     const realizedCheque = await this.prisma.$transaction(async (tx) => {
-      if (cheque.salesInvoiceId) {
+      const claimed = await tx.cheque.updateMany({
+        where: { id, status: cheque.status },
+        data: { status: "REALIZED" },
+      });
+      if (!claimed.count)
+        throw new BadRequestException("Cheque changed; refresh and try again");
+      if (cheque.payment) {
+        const paymentClaim = await tx.payment.updateMany({
+          where: { id: cheque.payment.id, status: cheque.payment.status },
+          data: { status: "POSTED" },
+        });
+        if (!paymentClaim.count)
+          throw new BadRequestException(
+            "Payment changed; refresh and try again",
+          );
+        await settlePayment(tx, cheque.payment);
+      } else if (cheque.salesInvoiceId) {
         await this.applyInvoicePayment(
           tx,
           cheque.salesInvoiceId,
-          Number(cheque.amount)
+          Number(cheque.amount),
         );
       }
 
@@ -119,10 +159,10 @@ export class ChequesService {
         data: {
           realizedAt: new Date(),
           status: "REALIZED",
-          updatedById: context.actor.id
+          updatedById: context.actor.id,
         },
         include: chequeInclude,
-        where: { id }
+        where: { id },
       });
     });
 
@@ -134,7 +174,7 @@ export class ChequesService {
       ipAddress: context.ipAddress,
       newValues: toAuditJson(realizedCheque),
       oldValues: toAuditJson(cheque),
-      userAgent: context.userAgent
+      userAgent: context.userAgent,
     });
 
     return realizedCheque;
@@ -143,11 +183,13 @@ export class ChequesService {
   async returnCheque(
     id: number,
     dto: ReturnChequeDto,
-    context: RequestContext
+    context: RequestContext,
   ) {
     const cheque = await this.findChequeById(id);
     if (!["RECEIVED", "DEPOSITED"].includes(cheque.status)) {
-      throw new BadRequestException("Only received or deposited cheques can be returned");
+      throw new BadRequestException(
+        "Only received or deposited cheques can be returned",
+      );
     }
 
     const returnedCheque = await this.prisma.cheque.update({
@@ -155,10 +197,10 @@ export class ChequesService {
         returnedAt: new Date(),
         returnedReason: dto.returnedReason,
         status: "RETURNED",
-        updatedById: context.actor.id
+        updatedById: context.actor.id,
       },
       include: chequeInclude,
-      where: { id }
+      where: { id },
     });
 
     await this.auditService.record({
@@ -169,7 +211,7 @@ export class ChequesService {
       ipAddress: context.ipAddress,
       newValues: toAuditJson(returnedCheque),
       oldValues: toAuditJson(cheque),
-      userAgent: context.userAgent
+      userAgent: context.userAgent,
     });
 
     return returnedCheque;
@@ -178,9 +220,11 @@ export class ChequesService {
   private async applyInvoicePayment(
     tx: Prisma.TransactionClient,
     invoiceId: number,
-    amount: number
+    amount: number,
   ) {
-    const invoice = await tx.salesInvoice.findUnique({ where: { id: invoiceId } });
+    const invoice = await tx.salesInvoice.findUnique({
+      where: { id: invoiceId },
+    });
     if (!invoice || invoice.status === "CANCELLED") {
       throw new BadRequestException("Invoice is invalid");
     }
@@ -195,9 +239,9 @@ export class ChequesService {
       data: {
         balanceAmount: nextBalance,
         paidAmount: nextPaid,
-        status: nextBalance === 0 ? "PAID" : "PARTIALLY_PAID"
+        status: nextBalance === 0 ? "PAID" : "PARTIALLY_PAID",
       },
-      where: { id: invoiceId }
+      where: { id: invoiceId },
     });
   }
 }
