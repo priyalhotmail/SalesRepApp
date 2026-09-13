@@ -2,6 +2,8 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import EmailIcon from "@mui/icons-material/Email";
+import PrintIcon from "@mui/icons-material/Print";
 import {
   Alert,
   Box,
@@ -32,6 +34,7 @@ import {
   useTheme
 } from "@mui/material";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   ApiError,
   apiRequest,
@@ -94,7 +97,7 @@ export type ResourceField = {
   reference?: ResourceReference;
   referenceQuery?: (values: Record<string, unknown>) => Record<string, number | string | boolean | undefined>;
   required?: boolean;
-  type?: "checkbox" | "date" | "datetime" | "deliveryItemSummary" | "deliveryItems" | "deliveryPlanSummary" | "json" | "multiReference" | "number" | "orderItems" | "select" | "text" | "warehouseTransferItems" | "warehouseTransferSummary";
+  type?: "checkbox" | "date" | "datetime" | "deliveryItemSummary" | "deliveryItems" | "deliveryPlanSummary" | "invoiceOrderSummary" | "json" | "multiReference" | "number" | "orderItems" | "select" | "text" | "warehouseTransferItems" | "warehouseTransferSummary";
   visible?: (user: AuthUser | null) => boolean;
 };
 
@@ -153,6 +156,8 @@ export function ResourcePage<T extends Record<string, unknown>>({
   config
 }: ResourcePageProps<T>) {
   const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [records, setRecords] = useState<T[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -167,6 +172,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
   const [actionRecord, setActionRecord] = useState<T | null>(null);
   const [actionConfig, setActionConfig] = useState<ResourceAction<T> | null>(null);
   const [actionValues, setActionValues] = useState<Record<string, unknown>>({});
+  const [createdInvoice, setCreatedInvoice] = useState<Record<string, unknown> | null>(null);
   const [referenceOptions, setReferenceOptions] = useState<
     Record<string, ReferenceOption[]>
   >({});
@@ -383,6 +389,31 @@ export function ResourcePage<T extends Record<string, unknown>>({
     setFormOpen(true);
   };
 
+  useEffect(() => {
+    if (config.endpoint !== "sales-invoices") return;
+    const params = new URLSearchParams(location.search);
+    const orderId = Number(params.get("orderId"));
+    if (params.get("create") !== "1" || !orderId) return;
+    const confirmedAt = params.get("confirmedAt");
+    const confirmedDate = confirmedAt ? new Date(confirmedAt) : null;
+    let dueDate: string | undefined;
+    if (confirmedDate && !Number.isNaN(confirmedDate.getTime())) {
+      const date = new Date(confirmedDate);
+      date.setDate(date.getDate() + 14);
+      dueDate = toLocalDateTimeFromDate(date);
+    }
+    setEditingRecord(null);
+    setFormContext(null);
+    setFormValues({
+      ...getInitialValues(config.fields ?? []),
+      ...(dueDate ? { dueDate } : {}),
+      orderId: String(orderId)
+    });
+    setFormError(null);
+    setFormOpen(true);
+    navigate(location.pathname, { replace: true });
+  }, [config.endpoint, config.fields, location.pathname, location.search, navigate]);
+
   const openEdit = async (record: T) => {
     setFormContext(null);
     setFormError(null);
@@ -426,11 +457,16 @@ export function ResourcePage<T extends Record<string, unknown>>({
         const endpoint =
           typeof config.createEndpoint === "function"
             ? config.createEndpoint(payload)
-            : config.createEndpoint;
-        await apiRequest(endpoint, {
+            : config.endpoint === "sales-invoices" && user?.roles?.includes("DELIVERY_PERSON")
+              ? "sales-invoices/from-delivery"
+              : config.createEndpoint;
+        const created = await apiRequest<Record<string, unknown>>(endpoint, {
           body: payload,
           method: config.createMethod ?? "POST"
         });
+        if (config.endpoint === "sales-invoices") {
+          setCreatedInvoice(created);
+        }
       }
       setFormOpen(false);
       await loadRecords();
@@ -474,10 +510,18 @@ export function ResourcePage<T extends Record<string, unknown>>({
         setActionConfig(null);
         return;
       }
-      await apiRequest(actionConfig.endpoint(actionRecord), {
+      const actionResult = await apiRequest<Record<string, unknown>>(actionConfig.endpoint(actionRecord), {
         body: buildPayload(bodyFields, actionValues, "create"),
         method: actionConfig.method ?? "POST"
       });
+      if (isDeliveryPage && actionConfig.label === "Confirm") {
+        const orderId = Number(actionResult.orderId ?? actionRecord.orderId);
+        const confirmedAt = String(actionResult.deliveredAt ?? new Date().toISOString());
+        setActionConfig(null);
+        setActionRecord(null);
+        navigate(`/module/salesInvoices?create=1&orderId=${orderId}&confirmedAt=${encodeURIComponent(confirmedAt)}`);
+        return;
+      }
       if (isOrderPage && actionConfig.label === "Approve") {
         setActionConfig(null);
         setActionRecord(null);
@@ -617,7 +661,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
       </Card>
 
       <Dialog fullWidth maxWidth="sm" onClose={() => setFormOpen(false)} open={formOpen}>
-        <DialogTitle>{editingRecord ? `Edit ${config.title}` : `New ${config.title}`}</DialogTitle>
+        <DialogTitle>{editingRecord ? `Edit ${config.title}` : config.endpoint === "sales-invoices" ? "New Sales Invoice" : `New ${config.title}`}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             {formError && <Alert severity="error">{formError}</Alert>}
@@ -629,6 +673,18 @@ export function ResourcePage<T extends Record<string, unknown>>({
                   : undefined;
               if (profileValue) {
                 return <TextField disabled fullWidth key={field.name} label={field.label} value={profileValue} />;
+              }
+              if (
+                config.endpoint === "sales-invoices" &&
+                field.name === "orderId" &&
+                field.type === "number" &&
+                user?.roles?.includes("DELIVERY_PERSON") &&
+                formValues.orderId
+              ) {
+                const selectedOrder = getFieldOptions(field, referenceOptions)?.find(
+                  (option) => option.value === String(formValues.orderId)
+                );
+                return <TextField disabled fullWidth key={field.name} label={field.label} value={selectedOrder?.label ?? String(formValues.orderId)} />;
               }
               return (
                 <FormField
@@ -654,8 +710,20 @@ export function ResourcePage<T extends Record<string, unknown>>({
         <DialogActions>
           <Button onClick={() => setFormOpen(false)}>Cancel</Button>
           <Button disabled={isSaving} onClick={() => void saveForm()} variant="contained">
-            Save
+            {config.endpoint === "sales-invoices" ? "Confirm invoice" : "Save"}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog fullWidth maxWidth="md" onClose={() => setCreatedInvoice(null)} open={Boolean(createdInvoice)}>
+        <DialogTitle>Invoice confirmed</DialogTitle>
+        <DialogContent>
+          {createdInvoice && <InvoiceDetails invoice={createdInvoice} />}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreatedInvoice(null)}>Close</Button>
+          <Button onClick={() => createdInvoice && emailInvoice(createdInvoice)} startIcon={<EmailIcon />}>Email invoice</Button>
+          <Button onClick={() => createdInvoice && printInvoice(createdInvoice)} startIcon={<PrintIcon />} variant="contained">Print invoice</Button>
         </DialogActions>
       </Dialog>
 
@@ -798,6 +866,10 @@ function FormField({
     return <DeliveryPlanSummary value={Array.isArray(value) ? value : []} />;
   }
 
+  if (field.type === "invoiceOrderSummary") {
+    return <InvoiceOrderSummary orderId={Number(values?.orderId || 0)} />;
+  }
+
   if (field.type === "checkbox") {
     return (
       <FormControlLabel
@@ -909,6 +981,84 @@ function DeliveryPlanSummary({ value }: { value: unknown[] }) {
   }, [value]);
   if (rows.length === 0) return <Typography color="text.secondary">Select orders to see the loading summary.</Typography>;
   return <Table size="small"><TableHead><TableRow><TableCell>Item name</TableCell><TableCell>Qty</TableCell><TableCell>Free issue</TableCell><TableCell>Total qty</TableCell></TableRow></TableHead><TableBody>{rows.map((row, index) => <TableRow key={`${row.itemName}-${index}`}><TableCell>{row.itemName || "Item description unavailable"}</TableCell><TableCell>{row.quantity}</TableCell><TableCell>{row.freeQuantity ?? 0}</TableCell><TableCell>{row.totalQuantity}</TableCell></TableRow>)}</TableBody></Table>;
+}
+
+function InvoiceOrderSummary({ orderId }: { orderId: number }) {
+  const [order, setOrder] = useState<Record<string, unknown> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    if (!orderId) {
+      setOrder(null);
+      setError(null);
+      return () => { isActive = false; };
+    }
+    void apiRequest<Record<string, unknown>>(`orders/${orderId}`)
+      .then((response) => { if (isActive) { setOrder(response); setError(null); } })
+      .catch((currentError) => { if (isActive) setError(getErrorMessage(currentError)); });
+    return () => { isActive = false; };
+  }, [orderId]);
+
+  if (!orderId) return <Typography color="text.secondary">Select an order to see its item details.</Typography>;
+  if (error) return <Alert severity="error">{error}</Alert>;
+  if (!order) return <Typography color="text.secondary">Loading item details...</Typography>;
+  return <InvoiceDetails invoice={order} orderPreview />;
+}
+
+function InvoiceDetails({ invoice, orderPreview = false }: { invoice: Record<string, unknown>; orderPreview?: boolean }) {
+  const customer = invoice.customer as Record<string, unknown> | undefined;
+  const items = Array.isArray(invoice.items) ? invoice.items as Record<string, unknown>[] : [];
+  return (
+    <Stack spacing={2} sx={{ pt: 1 }}>
+      {!orderPreview && <Typography color="text.secondary">Invoice {String(invoice.invoiceNumber ?? "")}</Typography>}
+      <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}>
+        <Typography><strong>Customer:</strong> {String(customer?.displayName ?? "")}</Typography>
+        <Typography><strong>Total:</strong> {formatMoney(Number(invoice.totalAmount ?? 0))}</Typography>
+      </Stack>
+      <Box sx={{ overflowX: "auto" }}>
+        <Table size="small">
+          <TableHead><TableRow><TableCell>Item</TableCell><TableCell align="right">Qty</TableCell><TableCell align="right">Free</TableCell><TableCell align="right">Unit price</TableCell><TableCell align="right">Discount</TableCell><TableCell align="right">Line total</TableCell></TableRow></TableHead>
+          <TableBody>{items.map((item, index) => {
+            const product = item.product as Record<string, unknown> | undefined;
+            return <TableRow key={String(item.id ?? index)}><TableCell>{[product?.code, product?.name].filter(Boolean).join(" - ") || String(item.productId ?? "Item")}</TableCell><TableCell align="right">{Number(item.quantity ?? 0)}</TableCell><TableCell align="right">{Number(item.freeQuantity ?? 0)}</TableCell><TableCell align="right">{formatMoney(Number(item.unitPrice ?? 0))}</TableCell><TableCell align="right">{formatMoney(Number(item.discountAmount ?? 0))}</TableCell><TableCell align="right">{formatMoney(Number(item.lineTotal ?? 0))}</TableCell></TableRow>;
+          })}</TableBody>
+        </Table>
+      </Box>
+    </Stack>
+  );
+}
+
+function emailInvoice(invoice: Record<string, unknown>) {
+  const customer = invoice.customer as Record<string, unknown> | undefined;
+  const recipient = typeof customer?.email === "string" ? customer.email : "";
+  const invoiceNumber = String(invoice.invoiceNumber ?? "Sales invoice");
+  const body = `Hello ${String(customer?.displayName ?? "")},\n\nPlease find the details for invoice ${invoiceNumber}.\nTotal: ${formatMoney(Number(invoice.totalAmount ?? 0))}\nDue date: ${formatDisplayDate(invoice.dueDate)}\n\nThank you.`;
+  window.location.href = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(`Invoice ${invoiceNumber}`)}&body=${encodeURIComponent(body)}`;
+}
+
+function printInvoice(invoice: Record<string, unknown>) {
+  const customer = invoice.customer as Record<string, unknown> | undefined;
+  const items = Array.isArray(invoice.items) ? invoice.items as Record<string, unknown>[] : [];
+  const rows = items.map((item) => {
+    const product = item.product as Record<string, unknown> | undefined;
+    const name = [product?.code, product?.name].filter(Boolean).join(" - ") || String(item.productId ?? "Item");
+    return `<tr><td>${escapeHtml(name)}</td><td class="number">${Number(item.quantity ?? 0)}</td><td class="number">${formatMoney(Number(item.unitPrice ?? 0))}</td><td class="number">${formatMoney(Number(item.discountAmount ?? 0))}</td><td class="number">${formatMoney(Number(item.lineTotal ?? 0))}</td></tr>`;
+  }).join("");
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) return;
+  printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(String(invoice.invoiceNumber ?? "Invoice"))}</title><style>body{font:14px Arial,sans-serif;color:#222;margin:40px}h1{margin-bottom:4px}.meta{display:flex;justify-content:space-between;margin:24px 0}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #ddd;padding:10px;text-align:left}.number{text-align:right}.total{text-align:right;font-size:18px;font-weight:bold;margin-top:20px}@media print{body{margin:20px}}</style></head><body><h1>Sales Invoice</h1><div>${escapeHtml(String(invoice.invoiceNumber ?? ""))}</div><div class="meta"><div><strong>Customer</strong><br>${escapeHtml(String(customer?.displayName ?? ""))}<br>${escapeHtml(String(customer?.email ?? ""))}</div><div><strong>Invoice date:</strong> ${escapeHtml(formatDisplayDate(invoice.invoiceDate))}<br><strong>Due date:</strong> ${escapeHtml(formatDisplayDate(invoice.dueDate))}</div></div><table><thead><tr><th>Item</th><th class="number">Qty</th><th class="number">Unit price</th><th class="number">Discount</th><th class="number">Line total</th></tr></thead><tbody>${rows}</tbody></table><div class="total">Total: ${formatMoney(Number(invoice.totalAmount ?? 0))}</div><script>window.onload=()=>window.print()</script></body></html>`);
+  printWindow.document.close();
+}
+
+function formatDisplayDate(value: unknown) {
+  if (!value) return "";
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[character]!));
 }
 
 function OrderItemsField({
@@ -1325,10 +1475,13 @@ function getInitialValues(
 }
 
 function toLocalDateTimeValue(type: "date" | "datetime") {
-  const now = new Date();
-  const offset = now.getTimezoneOffset() * 60_000;
-  const local = new Date(now.getTime() - offset).toISOString();
+  const local = toLocalDateTimeFromDate(new Date());
   return type === "date" ? local.slice(0, 10) : local.slice(0, 16);
+}
+
+function toLocalDateTimeFromDate(date: Date) {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
 function collectReferenceFields<T extends Record<string, unknown>>(
@@ -1400,7 +1553,7 @@ function buildPayload(
     if (value === "" || value === undefined) {
       return result;
     }
-    if (field.type === "deliveryItemSummary" || field.type === "deliveryPlanSummary" || field.type === "warehouseTransferSummary") {
+    if (field.type === "deliveryItemSummary" || field.type === "deliveryPlanSummary" || field.type === "invoiceOrderSummary" || field.type === "warehouseTransferSummary") {
       return result;
     } else if (field.type === "number") {
       result[field.name] = Number(value);

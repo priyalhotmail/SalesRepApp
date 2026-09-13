@@ -82,12 +82,21 @@ export class SalesInvoicesService {
     const salesRepId = isSalesRepScopedActor(actor)
       ? await this.getSalesRepId(actor.id)
       : undefined;
+    const isDeliveryPerson = actor.roles.includes("DELIVERY_PERSON");
 
     return this.prisma.order.findMany({
       include: { customer: true },
       orderBy: { orderDate: "desc" },
       where: {
         deletedAt: null,
+        delivery: isDeliveryPerson
+          ? {
+              is: {
+                deliveryPlan: { is: { driver: { is: { userId: actor.id } } } },
+                status: { in: ["DELIVERED", "PARTIALLY_DELIVERED"] }
+              }
+            }
+          : undefined,
         salesInvoice: null,
         salesRepId,
         status: { in: ["APPROVED", "RESERVED", "LOADING", "DELIVERED"] }
@@ -97,18 +106,33 @@ export class SalesInvoicesService {
 
   async createFromOrder(
     dto: CreateInvoiceFromOrderDto,
-    context: RequestContext
+    context: RequestContext,
+    requireConfirmedDriverDelivery = false
   ) {
     const salesRepId = isSalesRepScopedActor(context.actor)
       ? await this.getSalesRepId(context.actor.id)
       : undefined;
     const order = await this.prisma.order.findFirst({
-      include: { customer: true, items: true },
+      include: {
+        customer: true,
+        delivery: { include: { deliveryPlan: { include: { driver: true } } } },
+        items: true
+      },
       where: { deletedAt: null, id: dto.orderId, salesRepId }
     });
 
     if (!order) {
       throw new BadRequestException("Order is invalid");
+    }
+    if (
+      (requireConfirmedDriverDelivery || context.actor.roles.includes("DELIVERY_PERSON")) &&
+      (
+        !context.actor.roles.includes("DELIVERY_PERSON") ||
+        order.delivery?.deliveryPlan?.driver.userId !== context.actor.id ||
+        !["DELIVERED", "PARTIALLY_DELIVERED"].includes(order.delivery?.status ?? "")
+      )
+    ) {
+      throw new BadRequestException("The driver can only invoice a delivery they confirmed");
     }
     if (["DRAFT", "SUBMITTED", "CANCELLED"].includes(order.status)) {
       throw new BadRequestException("Order is not ready for invoicing");

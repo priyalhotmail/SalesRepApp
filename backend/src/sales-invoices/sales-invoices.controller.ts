@@ -44,8 +44,18 @@ export class SalesInvoicesController {
     return this.service.createFromOrder(dto, buildRequestContext(actor, request));
   }
 
+  @Post("from-delivery")
+  @Permissions("delivery.update")
+  createFromConfirmedDelivery(
+    @Body() dto: CreateInvoiceFromOrderDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request
+  ) {
+    return this.service.createFromOrder(dto, buildRequestContext(actor, request), true);
+  }
+
   @Get("eligible-orders")
-  @Permissions("sales_invoices.create")
+  @Permissions("sales_invoices.read")
   listEligibleOrders(@CurrentUser() actor: AuthenticatedUser) {
     return this.service.listEligibleOrders(actor);
   }

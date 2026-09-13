@@ -113,3 +113,9 @@ If a Branch Authorized User still cannot open Delivery Plans or Routes, run this
 ```sql
 SOURCE backend/sql/025_branch_delivery_and_routes_access_repair.sql;
 ```
+
+Allow Delivery Person users to generate an invoice after confirming their delivery:
+
+```sql
+SOURCE backend/sql/026_delivery_person_invoice_create_permission.sql;
+```

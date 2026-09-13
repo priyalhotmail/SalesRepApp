@@ -555,10 +555,12 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { label: "Status", path: "status" }
     ],
     createEndpoint: "sales-invoices/from-order",
+    canCreate: (user) => hasPermission(user, "sales_invoices.create") && !user?.roles?.includes("DELIVERY_PERSON"),
     endpoint: "sales-invoices",
     requiredPermissions: ["sales_invoices.read"],
     fields: [
       { label: "Order", name: "orderId", reference: eligibleInvoiceOrderReference, required: true, type: "number" },
+      { label: "Item details", name: "orderId", type: "invoiceOrderSummary" },
       { defaultValue: "now", label: "Invoice date", name: "invoiceDate", type: "datetime" },
       { label: "Due date", name: "dueDate", type: "datetime" },
       notesField
