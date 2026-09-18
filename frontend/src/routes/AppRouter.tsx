@@ -6,6 +6,7 @@ import { hasAnyPermission } from "../auth/permissions";
 import { AccessDenied } from "../components/AccessDenied";
 import { AppShell } from "../layouts/AppShell";
 
+const CollectionsPage = lazy(() => import("../pages/CollectionsPage").then(m => ({ default: m.CollectionsPage })));
 const CanReturnsPage = lazy(() => import("../pages/CanReturnsPage").then(m => ({ default: m.CanReturnsPage })));
 const DriverDayPage = lazy(() => import("../pages/DriverDayPage").then(m => ({ default: m.DriverDayPage })));
 const CreditControlPage = lazy(() =>
@@ -36,6 +37,7 @@ export function AppRouter() {
       <Routes>
         <Route path="/login" element={withPageFallback(<LoginPage />)} />
         <Route element={<ProtectedShell />}>
+          <Route path="/branch-collections" element={withPageFallback(<PermissionGate permissions={["collections.read"]}><CollectionsPage /></PermissionGate>)} />
           <Route path="/driver-day" element={withPageFallback(<PermissionGate permissions={["driver_day.read"]}><DriverDayPage /></PermissionGate>)} />
           <Route path="/empty-cans" element={withPageFallback(<PermissionGate permissions={["can_returns.read"]}><CanReturnsPage /></PermissionGate>)} />
           <Route path="/can-settings" element={withPageFallback(<PermissionGate permissions={["can_returns.configure"]}><CanReturnsPage configure /></PermissionGate>)} />

@@ -145,3 +145,15 @@ npm run prisma:generate:safe
 ```
 
 This command identifies only this checkout's backend and Nest launcher, stops their process trees, regenerates Prisma, and leaves the backend stopped. It does not stop the frontend or unrelated Node applications. After generation, run `npm run dev:backend` from the root, or `npm run dev` from the backend folder. Normal `npm run prisma:generate` now reports the current blocking PIDs and the recovery command before attempting generation.
+
+### 029 — Branch collection remittances
+Apply `029_branch_collection_remittances.sql` once after 028, then generate Prisma.
+The local development database was updated on 2026-09-18. Other databases need this migration before deploying the new backend.
+Confirmed receipts retain their collection office; historical confirmed receipts are backfilled from the customer office.
+Branch Collections tracks whole cash receipts and individual cheques, not partial cash allocations.
+Head-office and bank batches are PENDING, NOT_RECEIVED (unverified for banks), or RECEIVED (verified for banks).
+Only head-office roles can review. A missing batch can later be received; receipts remain attached so they cannot be sent twice.
+Bank deposits mark cheques DEPOSITED, never REALIZED. Customer settlement still requires cheque reconciliation.
+Previously deposited/realized cheques outside this feature are not shown as available physical cheques.
+Cancellation of a remitted payment is blocked. Audit entries record sending and every review.
+Sign out and back in after migration to refresh role permissions.

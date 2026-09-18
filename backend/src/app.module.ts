@@ -1,3 +1,4 @@
+import { CollectionsModule } from "./collections/collections.module";
 import { CanReturnsModule } from "./can-returns/can-returns.module";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
@@ -43,6 +44,7 @@ import { WarehouseTransfersModule } from "./warehouse-transfers/warehouse-transf
       load: [configuration]
     }),
     PrismaModule,
+    CollectionsModule,
     CanReturnsModule,
     SecurityModule,
     AuditModule,

@@ -1298,6 +1298,8 @@ model SalesInvoiceItem {
 }
 
 model Payment {
+  collectionOfficeId Int? @map("collection_office_id")
+  remittanceItem CollectionRemittanceItem?
   id             Int           @id @default(autoincrement())
   confirmedAt DateTime? @map("confirmed_at")
   confirmedById Int? @map("confirmed_by_id")
@@ -1809,4 +1811,34 @@ model CanCreditApplication {
   salesInvoice SalesInvoice @relation(fields: [salesInvoiceId], references: [id])
   @@index([salesInvoiceId])
   @@map("can_credit_applications")
+}
+
+model CollectionRemittance {
+  id String @id @db.VarChar(36)
+  officeId Int @map("office_id")
+  destination String @db.VarChar(20)
+  status String @default("PENDING") @db.VarChar(20)
+  sentAt DateTime @map("sent_at")
+  bankName String? @map("bank_name") @db.VarChar(160)
+  reference String @db.VarChar(160)
+  notes String? @db.VarChar(500)
+  createdById Int @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  reviewedById Int? @map("reviewed_by_id")
+  reviewedAt DateTime? @map("reviewed_at")
+  reviewNotes String? @map("review_notes") @db.VarChar(500)
+  items CollectionRemittanceItem[]
+  @@index([officeId, sentAt])
+  @@map("collection_remittances")
+}
+
+model CollectionRemittanceItem {
+  id Int @id @default(autoincrement())
+  remittanceId String @map("remittance_id") @db.VarChar(36)
+  paymentId Int @unique @map("payment_id")
+  amount Decimal @db.Decimal(12,2)
+  method String @db.VarChar(20)
+  remittance CollectionRemittance @relation(fields: [remittanceId], references: [id])
+  payment Payment @relation(fields: [paymentId], references: [id])
+  @@map("collection_remittance_items")
 }
