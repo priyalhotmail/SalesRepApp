@@ -16,7 +16,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,css}\"",
     "prisma:generate": "npm run prisma:generate -w backend",
     "prisma:validate": "npm run prisma:validate -w backend",
-    "prisma:generate:safe": "npm run prisma:generate:safe -w backend"
+    "prisma:generate:safe": "npm run prisma:generate:safe -w backend",
+    "format:fix": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,css}\""
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
