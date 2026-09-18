@@ -30,7 +30,7 @@ export function TabbedResourcesPage({ tabs }: TabbedResourcesPageProps) {
         </CardContent>
       </Card>
       {config ? (
-        <ResourcePage<ResourceRecord> config={config} />
+        <ResourcePage<ResourceRecord> key={config.endpoint} config={config} />
       ) : (
         <Alert severity="error">Module configuration was not found.</Alert>
       )}

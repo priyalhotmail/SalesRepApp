@@ -38,6 +38,7 @@ export class ChequesService {
 
     if (query.search) {
       where.OR = [
+        { payment: { paymentNumber: { contains: query.search } } },
         { chequeNumber: { contains: query.search } },
         { bankName: { contains: query.search } },
         { customer: { code: { contains: query.search } } },

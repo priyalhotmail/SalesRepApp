@@ -1,0 +1,22 @@
+require("reflect-metadata");
+require("dotenv").config({path:"backend/.env"});
+require("ts-node").register({transpileOnly:true,project:"backend/tsconfig.json"});
+const assert=require("node:assert/strict");
+const {PrismaClient}=require("@prisma/client");
+const {applyCanCredits}=require("../src/can-returns/can-credit");
+const db=new PrismaClient();
+const rollback=new Error("ROLLBACK_TEST");
+(async()=>{try { await db.$transaction(async tx=>{
+ const office=await tx.office.findFirst(); assert.ok(office,"Test needs an office");
+ const user=await tx.user.findFirst(); assert.ok(user,"Test needs a user");
+ const customer=await tx.customer.create({data:{officeId:office.id,code:`CAN-TEST-${Date.now()}`,customerType:"INDIVIDUAL",displayName:"Temporary can credit test"}});
+ const receipt=await tx.canReturn.create({data:{customerId:customer.id,officeId:office.id,collectedById:user.id,items:[{name:"5L",quantity:5,returnValue:10}],totalAmount:50,status:"TEMPORARY"}});
+ await applyCanCredits(tx,customer.id);assert.equal(await tx.canCreditApplication.count({where:{canReturnId:receipt.id}}),0);
+ await tx.canReturn.update({where:{id:receipt.id},data:{status:"CONFIRMED",remainingCredit:50}});
+ await applyCanCredits(tx,customer.id);assert.equal(Number((await tx.canReturn.findUnique({where:{id:receipt.id}})).remainingCredit),50);
+ const invoice=await tx.salesInvoice.create({data:{customerId:customer.id,invoiceNumber:`CAN-TEST-${Date.now()}`,invoiceDate:new Date(),dueDate:new Date(),totalAmount:35,balanceAmount:35}});
+ await applyCanCredits(tx,customer.id);
+ const result=await tx.salesInvoice.findUnique({where:{id:invoice.id}});assert.equal(Number(result.balanceAmount),0);assert.equal(Number(result.canCreditTotal),35);assert.equal(Number(result.returnTotal),35);assert.equal(result.status,"PAID");assert.equal(Number((await tx.canReturn.findUnique({where:{id:receipt.id}})).remainingCredit),15);
+ await applyCanCredits(tx,customer.id);assert.equal(await tx.canCreditApplication.count({where:{canReturnId:receipt.id}}),1);
+ throw rollback;
+ },{timeout:20000}); } catch(e) {if(e!==rollback)throw e;} console.log("Local MySQL credit integration passed; all test records rolled back."); })().catch(e=>{console.error(e.message);process.exitCode=1;}).finally(()=>db.$disconnect());

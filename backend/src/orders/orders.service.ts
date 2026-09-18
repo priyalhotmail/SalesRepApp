@@ -213,7 +213,10 @@ export class OrdersService {
     context: RequestContext
   ) {
     const order = await this.findOrderById(id, context.actor);
-    this.ensureOrderEditable(order);
+    this.ensureOrderEditable(order, context.actor);
+    if (order.status === "APPROVED" && dto.status) {
+      throw new BadRequestException("Approved orders must remain approved when edited");
+    }
     await this.ensureNoActiveReservations(id);
     if (isSalesRepScopedActor(context.actor) && (dto.routeId || dto.warehouseId)) {
       throw new BadRequestException("Sales reps cannot change order route or warehouse");
@@ -223,7 +226,21 @@ export class OrdersService {
       ? await this.prepareOrder(dto.items, order.customerId, order.officeId)
       : undefined;
 
+    if (order.status === "APPROVED" && preparedOrder) {
+      await this.ensureCreditAllowed({
+        ...order,
+        totalAmount: new Prisma.Decimal(preparedOrder.totalAmount)
+      });
+    }
+
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.order.updateMany({
+        where: { id, status: order.status, updatedAt: order.updatedAt },
+        data: { updatedById: context.actor.id, updatedAt: new Date() }
+      });
+      if (locked.count !== 1) {
+        throw new ConflictException("Order changed while editing. Refresh and try again.");
+      }
       if (preparedOrder) {
         await tx.orderItem.deleteMany({ where: { orderId: id } });
       }
@@ -707,9 +724,16 @@ export class OrdersService {
     }
   }
 
-  private ensureOrderEditable(order: OrderWithDetails) {
+  private ensureOrderEditable(order: OrderWithDetails, actor: AuthenticatedUser) {
+    if (order.status === "APPROVED" && actor.roles.some((role) =>
+      ["SUPER_ADMIN", "MAIN_OFFICE_AUTHORIZED_USER", "BRANCH_AUTHORIZED_USER"].includes(role)
+    )) {
+      return;
+    }
     if (!["DRAFT", "SUBMITTED"].includes(order.status)) {
-      throw new BadRequestException("Only draft or submitted orders can be updated");
+      throw new BadRequestException(
+        "Only draft or submitted orders can be updated. Super users can also edit approved orders before stock reservation."
+      );
     }
   }
 

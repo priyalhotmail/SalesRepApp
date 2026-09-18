@@ -127,3 +127,21 @@ SOURCE backend/sql/027_temporary_payment_collection.sql;
 ```
 
 Then regenerate the Prisma client and restart the backend. Sign in again to refresh role permissions. Existing posted receipts remain unchanged. New receipts are temporary; cash settles at handover and cheques settle at bank reconciliation. Customer-level receipts allocate to oldest due invoices.
+
+Driver day summary and empty-can returns (apply once after 027):
+
+```sql
+SOURCE backend/sql/028_driver_day_and_can_returns.sql;
+```
+
+Regenerate Prisma, restart the backend and sign in again. Configure sizes and LKR return values in Returnable Can Settings, explicitly assigning products sold as individual cans. One delivered product unit is one can; do not assign bulk litres or cartons. Products, return value and active status are editable; capacity remains fixed. Changing products recalculates can-return eligibility using the new selection. Existing return receipts and posted credits keep their recorded quantities and values. Only recorded delivered quantities qualify (including paid invoices). Temporary receipts reserve quantities; confirmation applies credits oldest invoice first, with the remainder automatically applied when the next invoice is created. Product returns remain separate. Undelivered receipt confirms custody only because existing delivery finalization deducts delivered stock only. Driver summary dates currently use UTC and collections are attributed to their recording user.
+
+### Windows Prisma generation lock
+
+`EPERM ... rename ... query_engine-windows.dll.node` means a running backend may have the engine loaded. Stopping only a child PID is insufficient if the Nest watcher restarts it. From the project root or backend folder, run:
+
+```powershell
+npm run prisma:generate:safe
+```
+
+This command identifies only this checkout's backend and Nest launcher, stops their process trees, regenerates Prisma, and leaves the backend stopped. It does not stop the frontend or unrelated Node applications. After generation, run `npm run dev:backend` from the root, or `npm run dev` from the backend folder. Normal `npm run prisma:generate` now reports the current blocking PIDs and the recovery command before attempting generation.

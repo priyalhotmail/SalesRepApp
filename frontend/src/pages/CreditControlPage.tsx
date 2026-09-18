@@ -111,7 +111,7 @@ export function CreditControlPage() {
                   key={String(row.invoiceId)}
                 >
                   <Typography>{formatDisplayValue(row.invoiceNumber)}</Typography>
-                  <Typography>{formatDisplayValue(row.balanceAmount)}</Typography>
+                  <Typography>{formatDisplayValue(row.balanceAmount, "balanceAmount")}</Typography>
                 </Stack>
               ))
             )}
@@ -145,7 +145,7 @@ function InfoPanel({
                   {key}
                 </Typography>
                 <Typography sx={{ overflowWrap: "anywhere", textAlign: "right" }} variant="body2">
-                  {formatDisplayValue(value)}
+                  {formatDisplayValue(value, key)}
                 </Typography>
               </Stack>
             ))}

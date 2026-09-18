@@ -69,7 +69,7 @@ export function DashboardPage() {
                       {label}
                     </Typography>
                     <Typography fontWeight={700} variant="h5">
-                      {formatDisplayValue(summary?.kpis?.[key] ?? 0)}
+                      {formatDisplayValue(summary?.kpis?.[key] ?? 0, key)}
                     </Typography>
                   </CardContent>
                 </Card>
@@ -93,7 +93,7 @@ export function DashboardPage() {
                       >
                         <Typography color="text.secondary">{String(row.date)}</Typography>
                         <Typography fontWeight={600}>
-                          {formatDisplayValue(row.salesAmount)}
+                          {formatDisplayValue(row.salesAmount, "salesAmount")}
                         </Typography>
                       </Stack>
                     ))}
