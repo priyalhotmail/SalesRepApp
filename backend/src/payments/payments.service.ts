@@ -198,11 +198,11 @@ export class PaymentsService {
 
     const cancelledPayment = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.payment.updateMany({
-        where: { id, status: payment.status },
+        where: { id, status: payment.status, remittanceItem: { is: null } },
         data: { status: "CANCELLED" },
       });
       if (!claimed.count)
-        throw new BadRequestException("Payment changed; refresh and try again");
+        throw new BadRequestException("Payment changed or has been sent/deposited and cannot be cancelled");
       if (payment.allocations && payment.status === "POSTED") {
         for (const allocation of payment.allocations as {
           invoiceId: number;
@@ -340,6 +340,7 @@ export class PaymentsService {
         where: { id, status: "TEMPORARY" },
         data: {
           status: payment.method === "CHEQUE" ? "AWAITING_CLEARANCE" : "POSTED",
+          collectionOfficeId: payment.customer.officeId,
           confirmedAt: new Date(),
           confirmedById: context.actor.id,
         },
