@@ -24,6 +24,9 @@ const paymentStatuses = [
 ] as const;
 
 export class PaymentQueryDto extends PaginationQueryDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) collectorId?: number;
+  @IsOptional() @IsDateString() date?: string;
+
   @IsOptional()
   @IsIn(paymentStatuses)
   status?: (typeof paymentStatuses)[number];

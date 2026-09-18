@@ -1,8 +1,10 @@
+import { calculateInvoiceAmounts } from "./invoice-amounts";
+import { applyCanCredits } from "../can-returns/can-credit";
 import {
   BadRequestException,
   ConflictException,
   Injectable,
-  NotFoundException
+  NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
@@ -10,27 +12,31 @@ import { AuthenticatedUser } from "../common/types/authenticated-user.type";
 import { RequestContext } from "../common/types/request-context.type";
 import { toAuditJson } from "../common/utils/audit-json.util";
 import { isSalesRepScopedActor } from "../common/utils/user-scope.util";
-import { getPagination, toPaginatedResult } from "../common/utils/pagination.util";
+import {
+  getPagination,
+  toPaginatedResult,
+} from "../common/utils/pagination.util";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   CancelSalesInvoiceDto,
   CreateInvoiceFromOrderDto,
-  SalesInvoiceQueryDto
+  SalesInvoiceQueryDto,
 } from "./dto/sales-invoice.dto";
 
 const invoiceInclude = {
+  canCredits: { include: { canReturn: true } },
   customer: true,
   items: { include: { product: true } },
   order: true,
   payments: true,
-  returns: true
+  returns: true,
 } satisfies Prisma.SalesInvoiceInclude;
 
 @Injectable()
 export class SalesInvoicesService {
   constructor(
     private readonly auditService: AuditService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
   ) {}
 
   async listInvoices(query: SalesInvoiceQueryDto) {
@@ -39,7 +45,7 @@ export class SalesInvoicesService {
       customerId: query.customerId,
       deletedAt: null,
       orderId: query.orderId,
-      status: query.status
+      status: query.status,
     };
 
     if (query.search) {
@@ -47,7 +53,7 @@ export class SalesInvoicesService {
         { invoiceNumber: { contains: query.search } },
         { customer: { code: { contains: query.search } } },
         { customer: { displayName: { contains: query.search } } },
-        { order: { orderNumber: { contains: query.search } } }
+        { order: { orderNumber: { contains: query.search } } },
       ];
     }
 
@@ -57,9 +63,9 @@ export class SalesInvoicesService {
         orderBy: { invoiceDate: "desc" },
         skip,
         take,
-        where
+        where,
       }),
-      this.prisma.salesInvoice.count({ where })
+      this.prisma.salesInvoice.count({ where }),
     ]);
 
     return toPaginatedResult(data, total, page, limit);
@@ -68,7 +74,7 @@ export class SalesInvoicesService {
   async findInvoiceById(id: number) {
     const invoice = await this.prisma.salesInvoice.findFirst({
       include: invoiceInclude,
-      where: { deletedAt: null, id }
+      where: { deletedAt: null, id },
     });
 
     if (!invoice) {
@@ -82,99 +88,136 @@ export class SalesInvoicesService {
     const salesRepId = isSalesRepScopedActor(actor)
       ? await this.getSalesRepId(actor.id)
       : undefined;
-    const isDeliveryPerson = actor.roles.includes("DELIVERY_PERSON");
+    const isDeliveryPerson = actor.roles.includes("DELIVERY_PERSON") && !this.isInvoiceManager(actor);
 
     return this.prisma.order.findMany({
       include: { customer: true },
       orderBy: { orderDate: "desc" },
       where: {
         deletedAt: null,
+        OR: [
+          { delivery: { is: null } },
+          { delivery: { is: {
+            status: { in: ["DELIVERED", "PARTIALLY_DELIVERED"] },
+            items: { some: { deliveredQuantity: { gt: 0 } } }
+          } } }
+        ],
         delivery: isDeliveryPerson
           ? {
               is: {
                 deliveryPlan: { is: { driver: { is: { userId: actor.id } } } },
-                status: { in: ["DELIVERED", "PARTIALLY_DELIVERED"] }
-              }
+                status: { in: ["DELIVERED", "PARTIALLY_DELIVERED"] },
+              },
             }
           : undefined,
         salesInvoice: null,
         salesRepId,
-        status: { in: ["APPROVED", "RESERVED", "LOADING", "DELIVERED"] }
-      }
+        status: { in: ["APPROVED", "RESERVED", "LOADING", "DELIVERED"] },
+      },
     });
   }
 
-  async createFromOrder(
-    dto: CreateInvoiceFromOrderDto,
-    context: RequestContext,
-    requireConfirmedDriverDelivery = false
-  ) {
-    const salesRepId = isSalesRepScopedActor(context.actor)
-      ? await this.getSalesRepId(context.actor.id)
+  private async loadInvoiceOrder(orderId: number, actor: AuthenticatedUser, requireConfirmedDriverDelivery = false) {
+    const salesRepId = isSalesRepScopedActor(actor)
+      ? await this.getSalesRepId(actor.id)
       : undefined;
     const order = await this.prisma.order.findFirst({
       include: {
         customer: true,
-        delivery: { include: { deliveryPlan: { include: { driver: true } } } },
-        items: true
+        delivery: { include: { items: true, deliveryPlan: { include: { driver: true } } } },
+        items: { include: { product: true } },
       },
-      where: { deletedAt: null, id: dto.orderId, salesRepId }
+      where: { deletedAt: null, id: orderId, salesRepId },
     });
 
     if (!order) {
       throw new BadRequestException("Order is invalid");
     }
     if (
-      (requireConfirmedDriverDelivery || context.actor.roles.includes("DELIVERY_PERSON")) &&
-      (
-        !context.actor.roles.includes("DELIVERY_PERSON") ||
-        order.delivery?.deliveryPlan?.driver.userId !== context.actor.id ||
-        !["DELIVERED", "PARTIALLY_DELIVERED"].includes(order.delivery?.status ?? "")
-      )
+      (requireConfirmedDriverDelivery ||
+        (actor.roles.includes("DELIVERY_PERSON") && !this.isInvoiceManager(actor))) &&
+      (!actor.roles.includes("DELIVERY_PERSON") ||
+        order.delivery?.deliveryPlan?.driver.userId !== actor.id ||
+        !["DELIVERED", "PARTIALLY_DELIVERED"].includes(
+          order.delivery?.status ?? "",
+        ))
     ) {
-      throw new BadRequestException("The driver can only invoice a delivery they confirmed");
+      throw new BadRequestException(
+        "The driver can only invoice a delivery they confirmed",
+      );
     }
     if (["DRAFT", "SUBMITTED", "CANCELLED"].includes(order.status)) {
       throw new BadRequestException("Order is not ready for invoicing");
     }
 
+    return order;
+  }
+
+  async previewFromOrder(orderId: number, actor: AuthenticatedUser) {
+    const order = await this.loadInvoiceOrder(orderId, actor);
+    return { ...order, ...calculateInvoiceAmounts(order) };
+  }
+
+  async createFromOrder(
+    dto: CreateInvoiceFromOrderDto,
+    context: RequestContext,
+    requireConfirmedDriverDelivery = false,
+  ) {
+    const order = await this.loadInvoiceOrder(dto.orderId, context.actor, requireConfirmedDriverDelivery);
+    const amounts = calculateInvoiceAmounts(order);
+
     const existingInvoice = await this.prisma.salesInvoice.findFirst({
-      where: { orderId: order.id }
+      where: { orderId: order.id },
     });
     if (existingInvoice) {
       throw new ConflictException("Order already has an active invoice");
     }
 
-    const invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : new Date();
+    const invoiceDate = dto.invoiceDate
+      ? new Date(dto.invoiceDate)
+      : new Date();
     const dueDate =
-      dto.dueDate ?? this.calculateDueDate(invoiceDate, order.customer.creditTermsDays);
+      dto.dueDate ??
+      this.calculateDueDate(invoiceDate, order.customer.creditTermsDays);
     const invoiceNumber = await this.generateInvoiceNumber();
 
-    const invoice = await this.prisma.salesInvoice.create({
-      data: {
-        balanceAmount: Number(order.totalAmount),
-        createdById: context.actor.id,
-        customerId: order.customerId,
-        discountTotal: Number(order.discountTotal),
-        dueDate: new Date(dueDate),
-        invoiceDate,
-        invoiceNumber,
-        items: {
-          create: order.items.map((item) => ({
-            discountAmount: Number(item.discountAmount),
-            freeQuantity: Number(item.freeQuantity),
-            lineTotal: Number(item.lineTotal),
-            productId: item.productId,
-            quantity: Number(item.quantity),
-            unitPrice: Number(item.unitPrice)
-          }))
+    const invoice = await this.prisma.$transaction(async (tx) => {
+      await tx.customer.update({
+        where: { id: order.customerId },
+        data: { canReturnLock: { increment: 1 } },
+      });
+      const created = await tx.salesInvoice.create({
+        data: {
+          balanceAmount: Number(amounts.totalAmount),
+          createdById: context.actor.id,
+          customerId: order.customerId,
+          discountTotal: Number(amounts.discountTotal),
+          dueDate: new Date(dueDate),
+          invoiceDate,
+          invoiceNumber,
+          items: {
+            create: amounts.items.map((item) => ({
+              discountAmount: Number(item.discountAmount),
+              freeQuantity: Number(item.freeQuantity),
+              lineTotal: Number(item.lineTotal),
+              productId: item.productId,
+              quantity: Number(item.quantity),
+              unitPrice: Number(item.unitPrice),
+            })),
+          },
+          notes: dto.notes,
+          orderId: order.id,
+          subtotal: Number(amounts.subtotal),
+          totalAmount: Number(amounts.totalAmount),
         },
-        notes: dto.notes,
-        orderId: order.id,
-        subtotal: Number(order.subtotal),
-        totalAmount: Number(order.totalAmount)
-      },
-      include: invoiceInclude
+        include: invoiceInclude,
+      });
+
+      await applyCanCredits(tx, order.customerId);
+      return tx.salesInvoice.findUniqueOrThrow({
+        where: { id: created.id },
+        include: invoiceInclude,
+      });
     });
 
     await this.auditService.record({
@@ -184,7 +227,7 @@ export class SalesInvoicesService {
       entityType: "sales_invoice",
       ipAddress: context.ipAddress,
       newValues: toAuditJson(invoice),
-      userAgent: context.userAgent
+      userAgent: context.userAgent,
     });
 
     return invoice;
@@ -193,12 +236,16 @@ export class SalesInvoicesService {
   async cancelInvoice(
     id: number,
     dto: CancelSalesInvoiceDto,
-    context: RequestContext
+    context: RequestContext,
   ) {
     const invoice = await this.findInvoiceById(id);
     if (invoice.status === "CANCELLED") {
       throw new BadRequestException("Invoice is already cancelled");
     }
+    if (Number(invoice.canCreditTotal) > 0)
+      throw new BadRequestException(
+        "Invoices with applied can credits cannot be cancelled",
+      );
     if (Number(invoice.paidAmount) > 0) {
       throw new BadRequestException("Paid invoices cannot be cancelled");
     }
@@ -209,10 +256,10 @@ export class SalesInvoicesService {
         deletedById: context.actor.id,
         notes: dto.notes ?? invoice.notes,
         status: "CANCELLED",
-        updatedById: context.actor.id
+        updatedById: context.actor.id,
       },
       include: invoiceInclude,
-      where: { id }
+      where: { id, canCreditTotal: 0, paidAmount: 0 },
     });
 
     await this.auditService.record({
@@ -223,7 +270,7 @@ export class SalesInvoicesService {
       ipAddress: context.ipAddress,
       newValues: toAuditJson(cancelledInvoice),
       oldValues: toAuditJson(invoice),
-      userAgent: context.userAgent
+      userAgent: context.userAgent,
     });
 
     return cancelledInvoice;
@@ -235,14 +282,20 @@ export class SalesInvoicesService {
     return dueDate.toISOString();
   }
 
+  private isInvoiceManager(actor: AuthenticatedUser) {
+    return actor.roles.some(role => ["SUPER_ADMIN", "MAIN_OFFICE_AUTHORIZED_USER", "BRANCH_AUTHORIZED_USER"].includes(role));
+  }
+
   private async getSalesRepId(userId: number) {
     const salesRep = await this.prisma.salesRep.findFirst({
       select: { id: true },
-      where: { status: "ACTIVE", userId }
+      where: { status: "ACTIVE", userId },
     });
 
     if (!salesRep) {
-      throw new BadRequestException("Authenticated user is not linked to an active sales rep");
+      throw new BadRequestException(
+        "Authenticated user is not linked to an active sales rep",
+      );
     }
 
     return salesRep.id;

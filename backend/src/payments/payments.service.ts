@@ -38,6 +38,16 @@ export class PaymentsService {
   async listPayments(query: PaymentQueryDto) {
     const { limit, page, skip, take } = getPagination(query);
     const where: Prisma.PaymentWhereInput = {
+      createdById: query.collectorId,
+      paymentDate: query.date
+        ? {
+            gte: new Date(query.date.slice(0, 10) + "T00:00:00.000Z"),
+            lt: new Date(
+              new Date(query.date.slice(0, 10) + "T00:00:00.000Z").getTime() +
+                86400000,
+            ),
+          }
+        : undefined,
       customerId: query.customerId,
       method: query.method,
       salesInvoiceId: query.salesInvoiceId,
@@ -388,14 +398,22 @@ export class PaymentsService {
       maxBalance,
     );
 
-    return tx.salesInvoice.update({
+    const changed = await tx.salesInvoice.updateMany({
       data: {
         balanceAmount: nextBalance,
         paidAmount: nextPaid,
         status: nextPaid === 0 ? "ISSUED" : "PARTIALLY_PAID",
       },
-      where: { id: invoiceId },
+      where: {
+        id: invoiceId,
+        balanceAmount: invoice.balanceAmount,
+        paidAmount: invoice.paidAmount,
+        status: invoice.status,
+      },
     });
+    if (!changed.count)
+      throw new BadRequestException("Invoice changed; retry cancellation");
+    return changed;
   }
 
   private async ensureCustomer(customerId: number) {

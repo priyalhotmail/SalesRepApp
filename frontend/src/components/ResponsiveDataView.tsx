@@ -107,7 +107,7 @@ function renderCell<T>(record: T, column: DataColumn<T>) {
   if (typeof value === "string" && isStatusLike(value)) {
     return <Chip label={value} size="small" variant="outlined" />;
   }
-  return formatDisplayValue(value);
+  return formatDisplayValue(value, column.path);
 }
 
 function isStatusLike(value: string) {

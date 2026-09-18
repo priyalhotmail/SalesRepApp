@@ -1,3 +1,5 @@
+import { formatMoney as money } from "../utils/money";
+import { useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -31,6 +33,7 @@ type Invoice = {
   invoiceNumber: string;
   dueDate: string;
   balanceAmount: string;
+  canCreditTotal?: string;
 };
 type Outstanding = {
   invoices: Invoice[];
@@ -55,11 +58,6 @@ type Payment = {
   status: string;
   cheque?: { chequeNumber?: string; chequeDate?: string };
 };
-const money = (value: number | string) =>
-  Number(value).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
 const statusLabel = (status: string) =>
   ({
     TEMPORARY: "Temporary",
@@ -69,6 +67,10 @@ const statusLabel = (status: string) =>
   })[status] ?? status;
 
 export function PaymentsPage() {
+  const [routeParams] = useSearchParams();
+  const collectorId = routeParams.get("collectorId") || undefined;
+  const collectionDate = routeParams.get("date") || undefined;
+  const collectionMethod = routeParams.get("method") || undefined;
   const { user } = useAuth();
   const canCreate = hasAnyPermission(user, ["payments.create"]);
   const canConfirm = hasAnyPermission(user, ["payments.confirm"]);
@@ -130,7 +132,7 @@ export function PaymentsPage() {
   useEffect(() => {
     let active = true;
     apiRequest<ApiListResponse<Payment>>("payments", {
-      query: { page, limit: 20, status: filter || undefined },
+      query: { page, limit: 20, status: filter || undefined, collectorId, date: collectionDate, method: collectionMethod },
     })
       .then((r) => {
         if (active) {
@@ -144,7 +146,7 @@ export function PaymentsPage() {
     return () => {
       active = false;
     };
-  }, [page, filter, revision]);
+  }, [page, filter, revision, collectorId, collectionDate, collectionMethod]);
   const selectedAllocations: Allocation[] = Object.entries(selected).map(
     ([id, value]) => {
       const invoice = outstanding?.invoices.find((i) => i.id === Number(id));
@@ -287,6 +289,7 @@ export function PaymentsPage() {
   return (
     <Stack spacing={3}>
       <Typography variant="h4">Payment Collection</Typography>
+      {collectorId && <Alert severity="info">Showing {collectionMethod?.toLowerCase()} collections recorded by user #{collectorId} on {collectionDate}. Confirm handover below, then return to the driver summary.</Alert>}
       {error && (
         <Alert severity="error" onClose={() => setError("")}>
           {error}
@@ -362,7 +365,7 @@ export function PaymentsPage() {
                               }}
                             />
                           </TableCell>
-                          <TableCell>{i.invoiceNumber}</TableCell>
+                          <TableCell>{i.invoiceNumber}{Number(i.canCreditTotal??0)>0 && <Typography variant="caption" display="block">Can credit deducted: {money(i.canCreditTotal??0)}</Typography>}</TableCell>
                           <TableCell>{i.dueDate.slice(0, 10)}</TableCell>
                           <TableCell align="right">
                             {money(i.balanceAmount)}

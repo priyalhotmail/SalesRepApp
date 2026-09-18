@@ -21,5 +21,5 @@ export function ResourceModulePage() {
 
   if (moduleKey === "payments") return <PaymentsPage />;
 
-  return <ResourcePage<ResourceRecord> config={config} />;
+  return <ResourcePage<ResourceRecord> key={config.endpoint} config={config} />;
 }

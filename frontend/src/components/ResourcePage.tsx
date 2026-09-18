@@ -1,3 +1,4 @@
+import { formatMoney } from "../utils/money";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
@@ -20,6 +21,7 @@ import {
   IconButton,
   MenuItem,
   Pagination,
+  Paper,
   Stack,
   Switch,
   Table,
@@ -41,6 +43,7 @@ import {
   normalizeListResponse
 } from "../api/client";
 import { useAuth, AuthUser } from "../auth/AuthContext";
+import { hasAnyPermission } from "../auth/permissions";
 import { compactObject, getValueByPath } from "../utils/object";
 import { DataState } from "./DataState";
 import { PageHeader } from "./PageHeader";
@@ -164,13 +167,16 @@ export function ResourcePage<T extends Record<string, unknown>>({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => new URLSearchParams(location.search).get("search") ?? "");
+  useEffect(() => { setSearch(new URLSearchParams(location.search).get("search") ?? ""); }, [location.search]);
   const [totalPages, setTotalPages] = useState(1);
   const [editingRecord, setEditingRecord] = useState<T | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [formValues, setFormValues] = useState<Record<string, unknown>>({});
   const [actionRecord, setActionRecord] = useState<T | null>(null);
   const [actionConfig, setActionConfig] = useState<ResourceAction<T> | null>(null);
+  const [actionDetailsLoading, setActionDetailsLoading] = useState(false);
+  const [actionDetailsReady, setActionDetailsReady] = useState(false);
   const [actionValues, setActionValues] = useState<Record<string, unknown>>({});
   const [createdInvoice, setCreatedInvoice] = useState<Record<string, unknown> | null>(null);
   const [referenceOptions, setReferenceOptions] = useState<
@@ -178,7 +184,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
   >({});
   const [formContext, setFormContext] = useState<CustomerFormContext | null>(null);
   const [deliveryDriverId, setDeliveryDriverId] = useState("");
-  const [deliveryStatus, setDeliveryStatus] = useState<string[]>(["PLANNED", "DISPATCHED"]);
+  const [deliveryStatus, setDeliveryStatus] = useState<string[]>(new URLSearchParams(location.search).has("search") ? [] : ["PLANNED", "DISPATCHED"]);
   const [orderStatus, setOrderStatus] = useState("");
   const [deliveryDrivers, setDeliveryDrivers] = useState<ReferenceOption[]>([]);
   const isDeliveryPage = config.endpoint === "deliveries";
@@ -457,7 +463,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
         const endpoint =
           typeof config.createEndpoint === "function"
             ? config.createEndpoint(payload)
-            : config.endpoint === "sales-invoices" && user?.roles?.includes("DELIVERY_PERSON")
+            : config.endpoint === "sales-invoices" && user?.roles?.includes("DELIVERY_PERSON") && !isInvoiceManager(user)
               ? "sales-invoices/from-delivery"
               : config.createEndpoint;
         const created = await apiRequest<Record<string, unknown>>(endpoint, {
@@ -491,7 +497,36 @@ export function ResourcePage<T extends Record<string, unknown>>({
     }
   };
 
+  const orderReviewAction = isOrderPage && ["Approve", "Reserve"].includes(actionConfig?.label ?? "")
+    ? actionConfig?.label
+    : undefined;
+  const isOrderReview = Boolean(orderReviewAction);
+  const actionRecordId = actionRecord?.id;
+  useEffect(() => {
+    if (!orderReviewAction || !actionRecordId) return;
+    let active = true;
+    apiRequest<T>(`orders/${actionRecordId}`).then(order => {
+      if (!active) return;
+      setActionRecord(order);
+      setActionDetailsReady(true);
+    }).catch(currentError => {
+      if (active) setFormError(getErrorMessage(currentError));
+    }).finally(() => {
+      if (active) setActionDetailsLoading(false);
+    });
+    return () => { active = false; };
+  }, [orderReviewAction, actionRecordId]);
+
+  const closeInvoice = () => {
+    setCreatedInvoice(null);
+    if (user?.roles?.includes("DELIVERY_PERSON")) {
+      navigate("/module/deliveries", { replace: true });
+    }
+  };
+
   const openAction = (record: T, action: ResourceAction<T>) => {
+    setActionDetailsLoading(isOrderPage && ["Approve", "Reserve"].includes(action.label));
+    setActionDetailsReady(false);
     setActionRecord(record);
     setActionConfig(action);
     setActionValues(getInitialValues(action.bodyFields ?? [], record));
@@ -499,7 +534,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
   };
 
   const runAction = async () => {
-    if (!actionConfig || !actionRecord) {
+    if (!actionConfig || !actionRecord || (isOrderReview && (!actionDetailsReady || actionDetailsLoading)) || actionConfig.disabled?.(actionRecord, user)) {
       return;
     }
     setIsSaving(true);
@@ -532,8 +567,11 @@ export function ResourcePage<T extends Record<string, unknown>>({
       if (actionConfig.label === "Dispatch") {
         const confirmAction = config.actions?.find((action) => action.label === "Confirm");
         if (confirmAction) {
+          const dispatchedRecord = { ...actionRecord, ...actionResult } as T;
+          setActionRecord(dispatchedRecord);
           setActionConfig(confirmAction);
-          setActionValues(getInitialValues(confirmAction.bodyFields ?? [], actionRecord));
+          setActionValues(getInitialValues(confirmAction.bodyFields ?? [], dispatchedRecord));
+          await loadRecords();
           return;
         }
       }
@@ -547,12 +585,26 @@ export function ResourcePage<T extends Record<string, unknown>>({
     }
   };
 
-  const actionButtons = useCallback(
-    (record: T) => (
+  const actionButtons = (record: T) => (
       <Stack direction="row" flexWrap="wrap" gap={0.5}>
+        {isDeliveryPage && isInvoiceManager(user) && hasAnyPermission(user, ["sales_invoices.create"]) &&
+          ["DISPATCHED", "DELIVERED", "PARTIALLY_DELIVERED"].includes(String(record.status)) &&
+          !getValueByPath(record, "order.salesInvoice.id") && (
+          <Button size="small" onClick={() => {
+            if (record.status === "DISPATCHED") {
+              const confirmAction = config.actions?.find(action => action.label === "Confirm");
+              if (confirmAction) openAction(record, confirmAction);
+            } else {
+              navigate(`/module/salesInvoices?create=1&orderId=${Number(record.orderId)}`);
+            }
+          }} disabled={record.status === "DISPATCHED" && !hasAnyPermission(user, ["delivery.update"])}>
+            Generate invoice
+          </Button>
+        )}
+        {config.endpoint === "sales-invoices" && <Button size="small" onClick={() => { apiRequest<Record<string, unknown>>(`sales-invoices/${record.id}`).then(setCreatedInvoice).catch(e => setError(getErrorMessage(e))); }}>View breakdown</Button>}
         {canEdit && (
           <Tooltip title="Edit">
-            <IconButton color="primary" onClick={() => void openEdit(record)} size="small">
+            <IconButton aria-label={`Edit ${config.title}`} color="primary" onClick={() => void openEdit(record)} size="small">
               <EditIcon fontSize="small" />
             </IconButton>
           </Tooltip>
@@ -578,12 +630,9 @@ export function ResourcePage<T extends Record<string, unknown>>({
           </Tooltip>
         )}
       </Stack>
-    ),
-    [canDelete, canEdit, config.actions, user]
-  );
+    );
 
-  const actions = useMemo(
-    () => (
+  const actions = (
       <Stack direction="row" spacing={1}>
         <Button onClick={() => void loadRecords()} startIcon={<RefreshIcon />}>
           Refresh
@@ -594,9 +643,7 @@ export function ResourcePage<T extends Record<string, unknown>>({
           </Button>
         )}
       </Stack>
-    ),
-    [canCreate, loadRecords]
-  );
+    );
 
   return (
     <Stack spacing={2.5}>
@@ -715,13 +762,13 @@ export function ResourcePage<T extends Record<string, unknown>>({
         </DialogActions>
       </Dialog>
 
-      <Dialog fullWidth maxWidth="md" onClose={() => setCreatedInvoice(null)} open={Boolean(createdInvoice)}>
+      <Dialog fullWidth maxWidth="md" onClose={closeInvoice} open={Boolean(createdInvoice)}>
         <DialogTitle>Invoice confirmed</DialogTitle>
         <DialogContent>
           {createdInvoice && <InvoiceDetails invoice={createdInvoice} />}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreatedInvoice(null)}>Close</Button>
+          <Button onClick={closeInvoice}>Close</Button>
           <Button onClick={() => createdInvoice && emailInvoice(createdInvoice)} startIcon={<EmailIcon />}>Email invoice</Button>
           <Button onClick={() => createdInvoice && printInvoice(createdInvoice)} startIcon={<PrintIcon />} variant="contained">Print invoice</Button>
         </DialogActions>
@@ -729,15 +776,18 @@ export function ResourcePage<T extends Record<string, unknown>>({
 
       <Dialog
         fullWidth
-        maxWidth="sm"
-        onClose={() => setActionConfig(null)}
+        maxWidth={isOrderReview ? "md" : "sm"}
+        onClose={() => { if (!isSaving) setActionConfig(null); }}
         open={Boolean(actionConfig)}
       >
-        <DialogTitle>{actionConfig?.label}</DialogTitle>
+        <DialogTitle>{isOrderReview ? `${actionConfig?.label} order ${String(actionRecord?.orderNumber ?? "")}` : actionConfig?.label}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             {formError && <Alert severity="error">{formError}</Alert>}
-            {actionConfig?.bodyMessage && actionRecord && (
+            {isOrderReview && actionDetailsLoading && <Typography role="status">Loading order details...</Typography>}
+            {isOrderReview && actionDetailsReady && actionRecord && <OrderReviewDetails order={actionRecord} />}
+            {isOrderReview && actionDetailsReady && actionRecord && actionConfig?.disabled?.(actionRecord, user) && <Alert severity="warning">This order is no longer available for this action. Close this dialog and refresh the list.</Alert>}
+            {actionConfig?.bodyMessage && actionRecord && (!isOrderReview || actionDetailsReady) && (
               <Typography>{actionConfig.bodyMessage(actionRecord)}</Typography>
             )}
             {(actionConfig?.bodyFields ?? []).map((field) => (
@@ -759,8 +809,8 @@ export function ResourcePage<T extends Record<string, unknown>>({
             <Button onClick={() => setActionConfig(null)} variant="contained">OK</Button>
           ) : (
             <>
-              <Button onClick={() => setActionConfig(null)}>Cancel</Button>
-              <Button disabled={isSaving} onClick={() => void runAction()} variant="contained">{actionConfig?.submitLabel ?? "Submit"}</Button>
+              <Button disabled={isSaving} onClick={() => setActionConfig(null)}>Cancel</Button>
+              <Button disabled={isSaving || actionDetailsLoading || (isOrderReview && !actionDetailsReady) || Boolean(actionRecord && actionConfig?.disabled?.(actionRecord, user))} onClick={() => void runAction()} variant="contained">{actionConfig?.submitLabel ?? (isOrderReview ? (orderReviewAction === "Reserve" ? "Reserve stock" : "Approve order") : "Submit")}</Button>
             </>
           )}
         </DialogActions>
@@ -950,7 +1000,7 @@ function DeliveryConfirmationItemsField({
     <Stack spacing={1}>
       <Typography fontWeight={600}>Delivery items</Typography>
       <Typography color="text.secondary" variant="body2">
-        Update delivered or rejected quantities as needed. Their total cannot exceed the ordered quantity.
+        Enter rejected quantities first; delivered quantities automatically become the ordered quantity minus rejects. You can then adjust delivered quantities for any other undelivered items.
       </Typography>
       <Box sx={{ overflowX: "auto" }}>
         <Table size="small">
@@ -960,8 +1010,20 @@ function DeliveryConfirmationItemsField({
               <TableRow key={item.deliveryItemId}>
                 <TableCell>{item.productName}</TableCell>
                 <TableCell>{item.orderedQuantity}</TableCell>
-                <TableCell><TextField inputProps={{ min: 0 }} onChange={(event) => updateItem(item.deliveryItemId, { deliveredQuantity: Number(event.target.value) })} size="small" type="number" value={item.deliveredQuantity} /></TableCell>
-                <TableCell><TextField inputProps={{ min: 0 }} onChange={(event) => updateItem(item.deliveryItemId, { rejectedQuantity: Number(event.target.value) })} size="small" type="number" value={item.rejectedQuantity} /></TableCell>
+                <TableCell><TextField inputProps={{ min: 0, max: Math.max(0, item.orderedQuantity - item.rejectedQuantity) }} onChange={(event) => updateItem(item.deliveryItemId, { deliveredQuantity: Number(event.target.value) })} size="small" type="number" value={item.deliveredQuantity} /></TableCell>
+                <TableCell><TextField
+                  inputProps={{ min: 0, max: item.orderedQuantity }}
+                  error={item.rejectedQuantity < 0 || item.rejectedQuantity > item.orderedQuantity}
+                  helperText={item.rejectedQuantity < 0 || item.rejectedQuantity > item.orderedQuantity ? `Enter between 0 and ${item.orderedQuantity}` : undefined}
+                  onChange={(event) => {
+                    const rejectedQuantity = Number(event.target.value);
+                    updateItem(item.deliveryItemId, {
+                      rejectedQuantity,
+                      deliveredQuantity: Math.max(0, Number((item.orderedQuantity - rejectedQuantity).toFixed(6)))
+                    });
+                  }}
+                  size="small" type="number" value={item.rejectedQuantity}
+                /></TableCell>
                 <TableCell><TextField onChange={(event) => updateItem(item.deliveryItemId, { notes: event.target.value })} size="small" value={item.notes ?? ""} /></TableCell>
               </TableRow>
             ))}
@@ -983,6 +1045,10 @@ function DeliveryPlanSummary({ value }: { value: unknown[] }) {
   return <Table size="small"><TableHead><TableRow><TableCell>Item name</TableCell><TableCell>Qty</TableCell><TableCell>Free issue</TableCell><TableCell>Total qty</TableCell></TableRow></TableHead><TableBody>{rows.map((row, index) => <TableRow key={`${row.itemName}-${index}`}><TableCell>{row.itemName || "Item description unavailable"}</TableCell><TableCell>{row.quantity}</TableCell><TableCell>{row.freeQuantity ?? 0}</TableCell><TableCell>{row.totalQuantity}</TableCell></TableRow>)}</TableBody></Table>;
 }
 
+function isInvoiceManager(user: AuthUser | null) {
+  return user?.roles?.some(role => ["SUPER_ADMIN", "MAIN_OFFICE_AUTHORIZED_USER", "BRANCH_AUTHORIZED_USER"].includes(role)) ?? false;
+}
+
 function InvoiceOrderSummary({ orderId }: { orderId: number }) {
   const [order, setOrder] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -994,7 +1060,9 @@ function InvoiceOrderSummary({ orderId }: { orderId: number }) {
       setError(null);
       return () => { isActive = false; };
     }
-    void apiRequest<Record<string, unknown>>(`orders/${orderId}`)
+    setOrder(null);
+    setError(null);
+    void apiRequest<Record<string, unknown>>(`sales-invoices/order-preview/${orderId}`)
       .then((response) => { if (isActive) { setOrder(response); setError(null); } })
       .catch((currentError) => { if (isActive) setError(getErrorMessage(currentError)); });
     return () => { isActive = false; };
@@ -1004,6 +1072,33 @@ function InvoiceOrderSummary({ orderId }: { orderId: number }) {
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!order) return <Typography color="text.secondary">Loading item details...</Typography>;
   return <InvoiceDetails invoice={order} orderPreview />;
+}
+
+function OrderReviewDetails({ order }: { order: Record<string, unknown> }) {
+  const customer = order.customer as Record<string, unknown> | undefined;
+  const details = [
+    ["Order date", formatDisplayDate(order.orderDate)],
+    ["Status", order.status],
+    ["Sales rep", getValueByPath(order, "salesRep.name")],
+    ["Branch", getValueByPath(order, "office.name")],
+    ["Warehouse", getValueByPath(order, "warehouse.name")],
+    ["Route", getValueByPath(order, "route.name")],
+    ["Customer code", customer?.code],
+    ["Delivery address", customer?.address],
+    ["Telephone", customer?.telephone]
+  ];
+  return <Stack spacing={2}>
+    <Stack direction="row" useFlexGap flexWrap="wrap" spacing={2}>
+      {details.map(([label, value]) => <Typography key={String(label)} variant="body2"><strong>{String(label)}:</strong> {value ? String(value) : "Not specified"}</Typography>)}
+    </Stack>
+    <InvoiceDetails invoice={order} orderPreview />
+    <Stack spacing={0.5} alignItems="flex-end">
+      <Typography>Subtotal: {formatMoney(Number(order.subtotal ?? 0))}</Typography>
+      <Typography>Discounts: {formatMoney(Number(order.discountTotal ?? 0))}</Typography>
+      <Typography fontWeight={700}>Order total: {formatMoney(Number(order.totalAmount ?? 0))}</Typography>
+    </Stack>
+    <Typography><strong>Notes:</strong> {String(order.notes || "No notes")}</Typography>
+  </Stack>;
 }
 
 function InvoiceDetails({ invoice, orderPreview = false }: { invoice: Record<string, unknown>; orderPreview?: boolean }) {
@@ -1016,6 +1111,14 @@ function InvoiceDetails({ invoice, orderPreview = false }: { invoice: Record<str
         <Typography><strong>Customer:</strong> {String(customer?.displayName ?? "")}</Typography>
         <Typography><strong>Total:</strong> {formatMoney(Number(invoice.totalAmount ?? 0))}</Typography>
       </Stack>
+      {!orderPreview && <Paper sx={{ p: 2 }} variant="outlined"><Stack spacing={1}>
+        <Typography variant="subtitle1">Invoice payment breakdown</Typography>
+        <Typography>Confirmed payments: {formatMoney(Number(invoice.paidAmount ?? 0))}</Typography>
+        <Typography>Empty-can credit: {formatMoney(Number(invoice.canCreditTotal ?? 0))}</Typography>
+        <Typography>Other returns: {formatMoney(Number(invoice.returnTotal ?? 0) - Number(invoice.canCreditTotal ?? 0))}</Typography>
+        <Typography fontWeight={600}>Outstanding: {formatMoney(Number(invoice.balanceAmount ?? 0))}</Typography>
+        {Array.isArray(invoice.canCredits) && (invoice.canCredits as { id: number; canReturnId: number; amount: string }[]).map(c => <Typography variant="body2" key={c.id}>Can return #{c.canReturnId}: {formatMoney(Number(c.amount))}</Typography>)}
+      </Stack></Paper>}
       <Box sx={{ overflowX: "auto" }}>
         <Table size="small">
           <TableHead><TableRow><TableCell>Item</TableCell><TableCell align="right">Qty</TableCell><TableCell align="right">Free</TableCell><TableCell align="right">Unit price</TableCell><TableCell align="right">Discount</TableCell><TableCell align="right">Line total</TableCell></TableRow></TableHead>
@@ -1047,7 +1150,7 @@ function printInvoice(invoice: Record<string, unknown>) {
   }).join("");
   const printWindow = window.open("", "_blank");
   if (!printWindow) return;
-  printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(String(invoice.invoiceNumber ?? "Invoice"))}</title><style>body{font:14px Arial,sans-serif;color:#222;margin:40px}h1{margin-bottom:4px}.meta{display:flex;justify-content:space-between;margin:24px 0}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #ddd;padding:10px;text-align:left}.number{text-align:right}.total{text-align:right;font-size:18px;font-weight:bold;margin-top:20px}@media print{body{margin:20px}}</style></head><body><h1>Sales Invoice</h1><div>${escapeHtml(String(invoice.invoiceNumber ?? ""))}</div><div class="meta"><div><strong>Customer</strong><br>${escapeHtml(String(customer?.displayName ?? ""))}<br>${escapeHtml(String(customer?.email ?? ""))}</div><div><strong>Invoice date:</strong> ${escapeHtml(formatDisplayDate(invoice.invoiceDate))}<br><strong>Due date:</strong> ${escapeHtml(formatDisplayDate(invoice.dueDate))}</div></div><table><thead><tr><th>Item</th><th class="number">Qty</th><th class="number">Unit price</th><th class="number">Discount</th><th class="number">Line total</th></tr></thead><tbody>${rows}</tbody></table><div class="total">Total: ${formatMoney(Number(invoice.totalAmount ?? 0))}</div><script>window.onload=()=>window.print()</script></body></html>`);
+  printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(String(invoice.invoiceNumber ?? "Invoice"))}</title><style>body{font:14px Arial,sans-serif;color:#222;margin:40px}h1{margin-bottom:4px}.meta{display:flex;justify-content:space-between;margin:24px 0}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #ddd;padding:10px;text-align:left}.number{text-align:right}.total{text-align:right;font-size:18px;font-weight:bold;margin-top:20px}@media print{body{margin:20px}}</style></head><body><h1>Sales Invoice</h1><div>${escapeHtml(String(invoice.invoiceNumber ?? ""))}</div><div class="meta"><div><strong>Customer</strong><br>${escapeHtml(String(customer?.displayName ?? ""))}<br>${escapeHtml(String(customer?.email ?? ""))}</div><div><strong>Invoice date:</strong> ${escapeHtml(formatDisplayDate(invoice.invoiceDate))}<br><strong>Due date:</strong> ${escapeHtml(formatDisplayDate(invoice.dueDate))}</div></div><table><thead><tr><th>Item</th><th class="number">Qty</th><th class="number">Unit price</th><th class="number">Discount</th><th class="number">Line total</th></tr></thead><tbody>${rows}</tbody></table><div class="total">Total: ${formatMoney(Number(invoice.totalAmount ?? 0))}<br>Payments: ${formatMoney(Number(invoice.paidAmount ?? 0))}<br>Can credit: ${formatMoney(Number(invoice.canCreditTotal ?? 0))}<br>Other returns: ${formatMoney(Number(invoice.returnTotal ?? 0)-Number(invoice.canCreditTotal ?? 0))}<br>Outstanding: ${formatMoney(Number(invoice.balanceAmount ?? 0))}</div><script>window.onload=()=>window.print()</script></body></html>`);
   printWindow.document.close();
 }
 
@@ -1384,9 +1487,6 @@ async function quoteItems(
   });
 }
 
-function formatMoney(value?: number) {
-  return Number(value ?? 0).toFixed(2);
-}
 
 function getInitialValues(
   fields: ResourceField[],
@@ -1439,9 +1539,9 @@ function getInitialValues(
               freeQuantity: Number(row.freeQuantity ?? 0),
               lineTotal: Number(row.lineTotal ?? 0),
               productId: Number(row.productId),
-              productName: product
-                ? [product.code, product.name].filter(Boolean).join(" - ")
-                : String(row.productId),
+              productName: typeof product?.name === "string"
+                ? product.name
+                : "Item description unavailable",
               quantity: Number(row.quantity ?? 0),
               unitPrice: Number(row.unitPrice ?? 0)
             };

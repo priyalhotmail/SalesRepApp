@@ -21,7 +21,7 @@ import {
 const deliveryInclude = {
   customer: true,
   items: { include: { orderItem: true, product: true } },
-  order: { include: { items: true, reservations: true } },
+  order: { include: { items: true, reservations: true, salesInvoice: { select: { id: true } } } },
   route: true,
   warehouse: true
 } satisfies Prisma.DeliveryInclude;

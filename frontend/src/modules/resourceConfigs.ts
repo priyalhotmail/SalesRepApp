@@ -1,3 +1,4 @@
+import { formatMoney } from "../utils/money";
 import {
   ResourceField,
   ResourcePageConfig
@@ -130,7 +131,7 @@ function isTerminalOrder(row: ResourceRecord) {
 function orderMessage(row: ResourceRecord, action: "approve" | "reserve") {
   const salesRep = (row.salesRep as ResourceRecord | undefined)?.name ?? "the Sales Rep";
   const customer = (row.customer as ResourceRecord | undefined)?.displayName ?? "the customer";
-  const total = Number(row.totalAmount ?? 0).toFixed(2);
+  const total = formatMoney(row.totalAmount ?? 0);
   return action === "approve"
     ? `Do you want to approve ${salesRep}'s order ${row.orderNumber} for ${customer}, total amount ${total}?`
     : `Do you want to reserve stock for ${salesRep}'s order ${row.orderNumber} for ${customer}, total amount ${total}?`;
@@ -555,7 +556,9 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { label: "Status", path: "status" }
     ],
     createEndpoint: "sales-invoices/from-order",
-    canCreate: (user) => hasPermission(user, "sales_invoices.create") && !user?.roles?.includes("DELIVERY_PERSON"),
+    canCreate: (user) => (isSuperAdmin(user) || hasPermission(user, "sales_invoices.create")) &&
+      (!user?.roles?.includes("DELIVERY_PERSON") || user.roles.some(role =>
+        ["SUPER_ADMIN", "MAIN_OFFICE_AUTHORIZED_USER", "BRANCH_AUTHORIZED_USER"].includes(role))),
     endpoint: "sales-invoices",
     requiredPermissions: ["sales_invoices.read"],
     fields: [
@@ -806,7 +809,7 @@ export const resourceConfigs: Record<string, ResourcePageConfig<ResourceRecord>>
       { label: "Name", path: "name" },
       { label: "Product", path: "product.name" },
       { label: "Type", path: "valueType" },
-      { label: "Value", path: "value" },
+      { label: "Value", render: (row) => row.valueType === "FIXED_AMOUNT" ? formatMoney(row.value) : String(row.value ?? "-") },
       { label: "Status", path: "status" }
     ],
     createEndpoint: "discounts/seasonal",

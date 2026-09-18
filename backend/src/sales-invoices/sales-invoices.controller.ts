@@ -60,6 +60,15 @@ export class SalesInvoicesController {
     return this.service.listEligibleOrders(actor);
   }
 
+  @Get("order-preview/:orderId")
+  @Permissions("sales_invoices.read")
+  previewFromOrder(
+    @Param("orderId", ParseIntPipe) orderId: number,
+    @CurrentUser() actor: AuthenticatedUser
+  ) {
+    return this.service.previewFromOrder(orderId, actor);
+  }
+
   @Get(":id")
   @Permissions("sales_invoices.read")
   findInvoiceById(@Param("id", ParseIntPipe) id: number) {

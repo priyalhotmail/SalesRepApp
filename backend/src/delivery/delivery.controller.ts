@@ -22,7 +22,6 @@ import {
   CreateDeliveryDto,
   DeliveryPlanEligibleOrdersQueryDto,
   DeliveryPlanQueryDto,
-  DeliveryPlanSummaryQueryDto,
   DeliveryNoteDto,
   DeliveryQueryDto
 } from "./dto/delivery.dto";

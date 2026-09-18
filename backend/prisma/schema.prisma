@@ -506,6 +506,8 @@ model Employee {
 }
 
 model Customer {
+  canReturnLock Int @default(0) @map("can_return_lock")
+  canReturns CanReturn[]
   id                    Int          @id @default(autoincrement())
   officeId              Int          @map("office_id")
   salesRepId            Int?         @map("sales_rep_id")
@@ -1136,6 +1138,8 @@ model OrderAmendmentRequest {
 }
 
 model Delivery {
+  returnedItemsReceivedAt DateTime? @map("returned_items_received_at")
+  returnedItemsReceivedById Int? @map("returned_items_received_by_id")
   id             Int            @id @default(autoincrement())
   deliveryNumber String         @unique @map("delivery_number") @db.VarChar(40)
   orderId        Int            @unique @map("order_id")
@@ -1237,6 +1241,8 @@ model DeliveryItem {
 }
 
 model SalesInvoice {
+  canCredits CanCreditApplication[]
+  canCreditTotal Decimal @default(0) @map("can_credit_total") @db.Decimal(12, 2)
   id            Int                @id @default(autoincrement())
   invoiceNumber String             @unique @map("invoice_number") @db.VarChar(40)
   orderId       Int?               @unique @map("order_id")
@@ -1763,4 +1769,44 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model CanType {
+  id Int @id @default(autoincrement())
+  name String @unique @db.VarChar(80)
+  capacityLitres Decimal @map("capacity_litres") @db.Decimal(10,3)
+  returnValue Decimal @map("return_value") @db.Decimal(12,2)
+  productIds Json @map("product_ids")
+  active Boolean @default(true)
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@map("can_types")
+}
+model CanReturn {
+  id Int @id @default(autoincrement())
+  customerId Int @map("customer_id")
+  officeId Int @map("office_id")
+  collectedById Int @map("collected_by_id")
+  collectedAt DateTime @default(now()) @map("collected_at")
+  status String @default("TEMPORARY") @db.VarChar(20)
+  items Json
+  totalAmount Decimal @map("total_amount") @db.Decimal(12,2)
+  remainingCredit Decimal @default(0) @map("remaining_credit") @db.Decimal(12,2)
+  confirmedAt DateTime? @map("confirmed_at")
+  confirmedById Int? @map("confirmed_by_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  applications CanCreditApplication[]
+  @@index([collectedById, collectedAt])
+  @@index([customerId, status])
+  @@map("can_returns")
+}
+model CanCreditApplication {
+  id Int @id @default(autoincrement())
+  canReturnId Int @map("can_return_id")
+  salesInvoiceId Int @map("sales_invoice_id")
+  amount Decimal @db.Decimal(12,2)
+  createdAt DateTime @default(now()) @map("created_at")
+  canReturn CanReturn @relation(fields: [canReturnId], references: [id])
+  salesInvoice SalesInvoice @relation(fields: [salesInvoiceId], references: [id])
+  @@index([salesInvoiceId])
+  @@map("can_credit_applications")
 }

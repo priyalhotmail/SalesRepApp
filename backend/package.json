@@ -8,9 +8,10 @@
     "prestart": "npm run build",
     "start": "node dist/main.js",
     "lint": "eslint \"src/**/*.ts\"",
-    "prisma:generate": "prisma generate",
+    "prisma:generate": "node scripts/prisma-generate.cjs",
     "prisma:validate": "prisma validate",
-    "prisma:format": "prisma format"
+    "prisma:format": "prisma format",
+    "prisma:generate:safe": "node scripts/prisma-generate.cjs --stop-backend"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

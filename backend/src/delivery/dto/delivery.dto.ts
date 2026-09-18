@@ -3,7 +3,6 @@ import {
   ArrayMinSize,
   IsArray,
   IsDateString,
-  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -14,13 +13,7 @@ import {
 } from "class-validator";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 
-const deliveryStatuses = [
-  "PLANNED",
-  "DISPATCHED",
-  "PARTIALLY_DELIVERED",
-  "DELIVERED",
-  "CANCELLED"
-] as const;
+
 
 export class DeliveryQueryDto extends PaginationQueryDto {
   @IsOptional()

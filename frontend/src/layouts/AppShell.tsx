@@ -32,6 +32,9 @@ import { hasAnyPermission } from "../auth/permissions";
 const drawerWidth = 264;
 
 const navigationItems = [
+  { icon: <LocalShippingIcon />, label: "Driver Day Summary", path: "/driver-day", permissions: ["driver_day.read"] },
+  { icon: <InventoryIcon />, label: "Empty Can Returns", path: "/empty-cans", permissions: ["can_returns.read"] },
+  { icon: <SettingsIcon />, label: "Returnable Can Settings", path: "/can-settings", permissions: ["can_returns.configure"] },
   { icon: <DashboardIcon />, label: "Dashboard", path: "/", permissions: ["dashboard.read"] },
   { icon: <PeopleIcon />, label: "Users", path: "/module/users", permissions: ["users.read"] },
   { icon: <PeopleIcon />, label: "Employees", path: "/module/employees", permissions: ["employees.read"] },

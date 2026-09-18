@@ -1,3 +1,5 @@
+import { formatMoney, isMoneyField } from "./money";
+
 export function getValueByPath(record: unknown, path: string): unknown {
   return path.split(".").reduce<unknown>((current, part) => {
     if (!current || typeof current !== "object") {
@@ -7,13 +9,14 @@ export function getValueByPath(record: unknown, path: string): unknown {
   }, record);
 }
 
-export function formatDisplayValue(value: unknown): string {
+export function formatDisplayValue(value: unknown, path?: string): string {
   if (value === null || value === undefined || value === "") {
     return "-";
   }
   if (typeof value === "boolean") {
     return value ? "Yes" : "No";
   }
+  if (path && isMoneyField(path)) return formatMoney(value);
   if (typeof value === "number") {
     return Number.isInteger(value) ? String(value) : value.toFixed(2);
   }

@@ -1,3 +1,4 @@
+import { CanReturnsModule } from "./can-returns/can-returns.module";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { AuditModule } from "./audit/audit.module";
@@ -42,6 +43,7 @@ import { WarehouseTransfersModule } from "./warehouse-transfers/warehouse-transf
       load: [configuration]
     }),
     PrismaModule,
+    CanReturnsModule,
     SecurityModule,
     AuditModule,
     AuthModule,

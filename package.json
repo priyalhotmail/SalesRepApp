@@ -15,11 +15,11 @@
     "lint": "npm run lint -w backend && npm run lint -w frontend",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,css}\"",
     "prisma:generate": "npm run prisma:generate -w backend",
-    "prisma:validate": "npm run prisma:validate -w backend"
+    "prisma:validate": "npm run prisma:validate -w backend",
+    "prisma:generate:safe": "npm run prisma:generate:safe -w backend"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
     "prettier": "^3.4.2"
   }
 }
-
